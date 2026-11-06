@@ -1,0 +1,1558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  =====================================================================
+  BITE BOULEVARD — single-file restaurant website
+  ---------------------------------------------------------------------
+  HOW IT RUNS
+  • Without Supabase (CONFIG below left empty): the whole website, menu,
+    cart, checkout and WhatsApp ordering work fully. The admin panel runs
+    in "Local mode": it only shows orders placed IN THE SAME BROWSER, and
+    product edits only change the menu in that browser. Customer orders
+    still reach you on WhatsApp.
+  • With Supabase: every order from every customer is saved to your
+    database and appears in the admin panel on any device. Menu edits
+    go live for everyone.
+
+  SUPABASE SETUP (one time, about 10 minutes)
+  1. Create a free project at https://supabase.com
+  2. Open  SQL Editor → New query, paste ALL of the SQL below, press Run.
+  3. Authentication → Users → "Add user" → create YOUR admin email + password
+     (tick "Auto confirm user").
+  4. Authentication → Sign In / Providers → turn OFF "Allow new users to
+     sign up". (Important: otherwise strangers could create a login.)
+  5. Project Settings → API (or "API Keys") → copy the Project URL and the
+     anon / publishable key into CONFIG below.
+  6. Open the site, go to  yoursite/#admin , log in, open "Products" and
+     press "Load starter menu into database".
+
+  ---------------- SQL (copy from here) ----------------
+  create table if not exists categories (
+    slug text primary key,
+    name text not null,
+    sort int default 0
+  );
+  create table if not exists products (
+    id uuid primary key default gen_random_uuid(),
+    name text not null,
+    description text,
+    price int not null check (price >= 0),
+    category text references categories(slug) on update cascade,
+    image text,
+    featured boolean default false,
+    created_at timestamptz default now()
+  );
+  create table if not exists orders (
+    id uuid primary key default gen_random_uuid(),
+    order_code text unique not null,
+    customer_name text not null,
+    phone text not null,
+    address text not null,
+    notes text,
+    items jsonb not null,
+    subtotal int not null,
+    total int not null,
+    status text not null default 'Pending',
+    created_at timestamptz default now()
+  );
+  alter table categories enable row level security;
+  alter table products   enable row level security;
+  alter table orders     enable row level security;
+  create policy "public read categories" on categories for select using (true);
+  create policy "public read products"   on products   for select using (true);
+  create policy "admin manage categories" on categories for all to authenticated using (true) with check (true);
+  create policy "admin manage products"   on products   for all to authenticated using (true) with check (true);
+  create policy "customers place orders" on orders for insert to anon, authenticated with check (status = 'Pending');
+  create policy "admin read orders"   on orders for select to authenticated using (true);
+  create policy "admin update orders" on orders for update to authenticated using (true) with check (true);
+  ---------------- SQL (end) ----------------
+  =====================================================================
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bite Boulevard | Fresh Food. Big Flavours. | Free Home Delivery</title>
+<meta name="description" content="Bite Boulevard: smash burgers, stone-baked pizza, hot wings, chicken shawarma, fried chicken and combo deals. Order online and get 100% free home delivery. Order on WhatsApp 0321 8983989.">
+<meta name="theme-color" content="#110e0b">
+<meta property="og:title" content="Bite Boulevard | Fresh Food. Big Flavours.">
+<meta property="og:description" content="Burgers, pizza, wings, shawarma and more. Free home delivery on every order.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://images.unsplash.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23c4501b'/%3E%3Ctext x='32' y='43' font-family='Arial Narrow,Arial' font-weight='900' font-size='30' text-anchor='middle' fill='%23fff'%3EBB%3C/text%3E%3C/svg%3E">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Restaurant",
+  "name": "Bite Boulevard",
+  "slogan": "Fresh Food. Big Flavours.",
+  "servesCuisine": ["Fast Food", "Burgers", "Pizza", "Fried Chicken", "Shawarma"],
+  "telephone": "+92-321-8983989",
+  "email": "hassaan7361@gmail.com",
+  "priceRange": "Rs 150 – Rs 4,500",
+  "currenciesAccepted": "PKR",
+  "hasMenu": "#menu"
+}
+</script>
+<style>
+:root{
+  --ink:#14110e; --ink-2:#1e1a16; --ink-3:#2b2620;
+  --cream:#f3ead9; --cream-2:#e9dcc4; --white:#fffdf8;
+  --orange:#c4501b; --orange-2:#d9602a; --orange-soft:#f2d7c2;
+  --muted:#6b6155; --muted-d:#a99d8c;
+  --line:rgba(20,17,14,.12); --line-d:rgba(243,234,217,.14);
+  --r:8px; --ease:cubic-bezier(.2,.7,.2,1);
+  --shadow:0 18px 40px -22px rgba(20,17,14,.45);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:76px;-webkit-text-size-adjust:100%}
+body{font-family:'Archivo',Arial,Helvetica,sans-serif;background:var(--cream);color:var(--ink);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+body.lock{overflow:hidden}
+img{display:block;max-width:100%}
+button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+input,textarea,select{font:inherit;color:inherit}
+a{color:inherit;text-decoration:none}
+svg{flex-shrink:0}
+.wrap{width:min(1240px,100% - 40px);margin-inline:auto}
+h1,h2,.serif{font-family:'Archivo',Impact,'Arial Narrow',sans-serif;font-stretch:72%;font-weight:800;text-transform:uppercase;line-height:.92;letter-spacing:0}
+h3{font-weight:700;line-height:1.25}
+.kicker{display:block;font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--orange)}
+.h2{font-size:clamp(2.8rem,6.4vw,5rem)}
+.lead{font-size:1rem;color:var(--muted);max-width:46ch}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;padding:.95rem 1.4rem;border-radius:6px;font-weight:800;font-size:.88rem;text-transform:uppercase;letter-spacing:.05em;font-stretch:88%;transition:background .25s,color .25s,border-color .25s;white-space:nowrap}
+.btn svg{width:18px;height:18px}
+.btn-orange{background:var(--orange);color:#fff}
+.btn-orange:hover{background:var(--orange-2)}
+.btn-dark{background:var(--ink);color:var(--cream)}
+.btn-dark:hover{background:var(--ink-3)}
+.btn-line{border:2px solid currentColor}
+.btn-line:hover{background:var(--cream);color:var(--ink);border-color:var(--cream)}
+.btn-block{width:100%}
+.btn[disabled]{opacity:.5;pointer-events:none}
+
+/* ---------- NAV ---------- */
+.nav{position:fixed;inset:0 0 auto;z-index:50;padding:16px 0;color:var(--cream);transition:background .3s,padding .3s}
+.nav.scrolled{background:var(--ink);padding:10px 0;box-shadow:0 1px 0 var(--line-d)}
+.nav-in{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.logo{display:flex;align-items:center;gap:.65rem}
+.logo-mark{width:42px;height:42px;border-radius:6px;background:var(--orange);display:grid;place-items:center;font-stretch:72%;font-weight:900;font-size:1.3rem;color:#fff;letter-spacing:-.02em}
+.logo-txt{display:flex;flex-direction:column;line-height:1}
+.logo-txt b{font-stretch:72%;font-weight:800;font-size:1.4rem;text-transform:uppercase}
+.logo-txt small{font-size:.68rem;color:var(--muted-d);margin-top:3px;font-weight:600}
+.nav-links{display:flex;gap:1.8rem;font-size:.84rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.nav-links a{opacity:.85;transition:opacity .2s,color .2s}
+.nav-links a:hover{opacity:1;color:var(--orange-2)}
+.nav-actions{display:flex;align-items:center;gap:.5rem}
+.nav-wa{display:inline-flex;align-items:center;gap:.45rem;font-size:.82rem;font-weight:700;padding:.6rem .9rem;border-radius:6px;border:1.5px solid var(--line-d);transition:border-color .2s}
+.nav-wa:hover{border-color:var(--orange)}
+.nav-wa svg{width:17px;height:17px}
+.cart-btn{display:inline-flex;align-items:center;gap:.5rem;background:var(--orange);color:#fff;padding:.62rem 1rem;border-radius:6px;font-weight:800;font-size:.82rem;text-transform:uppercase;letter-spacing:.05em}
+.cart-btn:hover{background:var(--orange-2)}
+.cart-btn svg{width:18px;height:18px}
+.cart-count{min-width:22px;height:22px;padding:0 6px;border-radius:4px;background:var(--ink);color:#fff;font-size:.74rem;display:grid;place-items:center}
+.cart-btn.bump{animation:bump .45s var(--ease)}
+@keyframes bump{40%{transform:scale(1.08)}}
+.menu-toggle{display:none;width:44px;height:44px;border-radius:6px;border:1.5px solid var(--line-d);position:relative}
+.menu-toggle span{position:absolute;left:12px;right:12px;height:2px;background:currentColor;transition:transform .3s var(--ease),top .3s}
+.menu-toggle span:nth-child(1){top:17px}.menu-toggle span:nth-child(2){top:25px}
+.nav.open .menu-toggle span:nth-child(1){top:21px;transform:rotate(45deg)}
+.nav.open .menu-toggle span:nth-child(2){top:21px;transform:rotate(-45deg)}
+
+/* ---------- HERO ---------- */
+.hero{position:relative;min-height:min(92vh,880px);display:flex;align-items:flex-end;background:var(--ink);color:var(--cream);padding:140px 0 72px;overflow:hidden}
+.hero-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:70% center}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(20,17,14,.94) 0%,rgba(20,17,14,.74) 45%,rgba(20,17,14,.2) 100%),linear-gradient(0deg,rgba(20,17,14,.55),transparent 40%)}
+.hero-in{position:relative;z-index:1}
+.hero h1{font-size:clamp(4rem,11.5vw,10.5rem);margin:14px 0 22px;max-width:9ch}
+.hero h1 span{color:var(--orange-2)}
+.hero .kicker{color:var(--orange-2)}
+.hero-sub{font-size:1.1rem;max-width:44ch;color:#e3d8c5}
+.hero-cta{display:flex;gap:.7rem;flex-wrap:wrap;margin-top:30px}
+.stamp{position:absolute;z-index:1;right:7%;top:30%;background:var(--orange);color:#fff;padding:16px 20px;font-stretch:72%;font-weight:900;text-transform:uppercase;font-size:1.7rem;line-height:.95;transform:rotate(-5deg);box-shadow:6px 6px 0 var(--ink)}
+.stamp small{display:block;font-size:.78rem;font-weight:700;margin-top:8px;letter-spacing:.06em;font-stretch:95%}
+
+.infobar{background:var(--orange);color:#fff;font-size:.86rem;font-weight:700}
+.infobar .wrap{display:flex;justify-content:center;gap:8px 36px;flex-wrap:wrap;padding:14px 0;text-align:center}
+.infobar span{display:inline-flex;align-items:center;gap:8px}
+.infobar svg{width:18px;height:18px}
+
+/* ---------- SECTIONS ---------- */
+section{position:relative}
+.sec{padding:100px 0}
+.sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:44px;flex-wrap:wrap}
+.sec-head h2{margin-top:10px}
+
+/* bestsellers */
+.best-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:28px}
+.best{display:flex;flex-direction:column}
+.best-img{position:relative;aspect-ratio:4/5;overflow:hidden;border-radius:var(--r);background:var(--cream-2);margin-bottom:16px}
+.best-img img{width:100%;height:100%;object-fit:cover;transition:transform .7s var(--ease)}
+.best:hover .best-img img{transform:scale(1.04)}
+.best-row{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.best h3{font-size:1.12rem}
+.best p{font-size:.86rem;color:var(--muted);margin:6px 0 14px;flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.best .price{white-space:nowrap}
+
+/* menu */
+.menu-sec{background:var(--white);border-top:1px solid var(--line)}
+.menu-tools{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:32px}
+.menu-tools>*{min-width:0}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px;flex:1;min-width:0;max-width:100%}
+.chips::-webkit-scrollbar{display:none}
+.chip{padding:.55rem 1rem;border-radius:6px;border:1.5px solid var(--line);font-weight:700;font-size:.84rem;white-space:nowrap;background:var(--white);transition:border-color .2s,background .2s,color .2s}
+.chip:hover{border-color:var(--ink)}
+.chip.on{background:var(--ink);color:var(--cream);border-color:var(--ink)}
+.search{position:relative;width:min(300px,100%)}
+.search input{width:100%;padding:.75rem 1rem .75rem 2.6rem;border-radius:6px;border:1.5px solid var(--line);background:var(--cream);outline:none}
+.search input:focus{border-color:var(--orange)}
+.search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:17px;height:17px;color:var(--muted)}
+.menu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:20px}
+.dish{background:var(--white);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column;transition:border-color .3s,box-shadow .3s;animation:rise .5s var(--ease) both;animation-delay:calc(var(--i,0) * 30ms)}
+.dish:hover{border-color:rgba(20,17,14,.28);box-shadow:var(--shadow)}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}}
+.dish-media{position:relative;aspect-ratio:4/3;overflow:hidden;background:var(--cream-2)}
+.dish-media img{width:100%;height:100%;object-fit:cover;transition:transform .7s var(--ease)}
+.dish:hover .dish-media img{transform:scale(1.04)}
+.tag{position:absolute;top:10px;left:10px;background:var(--orange);color:#fff;font-size:.66rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:.3rem .55rem;border-radius:4px}
+.dish-body{padding:16px 16px 18px;display:flex;flex-direction:column;flex:1}
+.dish-cat{font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;font-weight:700;color:var(--muted)}
+.dish h3{font-size:1.12rem;margin:4px 0 6px}
+.dish-desc{font-size:.86rem;color:var(--muted);line-height:1.5;flex:1}
+.dish-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px}
+.price{font-weight:800;font-size:1.15rem;font-stretch:85%}
+.add{display:inline-flex;align-items:center;gap:.4rem;background:var(--ink);color:var(--cream);padding:.58rem .9rem;border-radius:6px;font-weight:700;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;transition:background .2s}
+.add:hover{background:var(--orange)}
+.add svg{width:14px;height:14px}
+.stepper{display:inline-flex;align-items:center;background:var(--orange);color:#fff;border-radius:6px;padding:2px}
+.stepper button{width:32px;height:32px;border-radius:4px;display:grid;place-items:center;font-size:1.1rem;font-weight:800}
+.stepper button:hover{background:rgba(255,255,255,.18)}
+.stepper span{min-width:26px;text-align:center;font-weight:800;font-size:.92rem}
+.stepper.light{background:var(--cream-2);color:var(--ink)}
+.stepper.light button:hover{background:rgba(20,17,14,.08)}
+.empty{text-align:center;color:var(--muted);padding:50px 0}
+.noimg{background:var(--ink-2)!important}
+.noimg img{opacity:0}
+.noimg::after{content:"BB";position:absolute;inset:0;display:grid;place-items:center;font-stretch:72%;font-weight:900;font-size:2.6rem;color:rgba(243,234,217,.22);z-index:1}
+
+/* deals */
+.deals{background:var(--ink);color:var(--cream)}
+.deals .lead{color:var(--muted-d)}
+.deals .kicker{color:var(--orange-2)}
+.deal-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+.deal{display:grid;grid-template-columns:1fr 1fr;background:var(--ink-2);border:1px solid var(--line-d);border-radius:var(--r);overflow:hidden;transition:border-color .3s}
+.deal:hover{border-color:var(--orange)}
+.deal-media{position:relative;min-height:240px;overflow:hidden;background:var(--ink-3)}
+.deal-media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.deal-body{padding:24px;display:flex;flex-direction:column}
+.deal-body .dish-cat{color:var(--orange-2)}
+.deal-body h3{font-stretch:72%;font-weight:800;text-transform:uppercase;font-size:2.1rem;line-height:.95;margin:8px 0 10px}
+.deal-body p{font-size:.88rem;color:var(--muted-d);flex:1}
+.deal-foot{display:flex;align-items:center;justify-content:space-between;margin-top:20px;gap:10px}
+.deal-foot .price{font-size:1.6rem;color:#fff}
+.deal .add{background:var(--orange);color:#fff}
+.deal .add:hover{background:var(--orange-2)}
+
+/* why */
+.why-in{display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:center}
+.why-img{position:relative;aspect-ratio:4/5;border-radius:var(--r);overflow:hidden;background:var(--ink-2)}
+.why-img img{width:100%;height:100%;object-fit:cover}
+.why-list{list-style:none;margin-top:30px;border-top:2px solid var(--ink)}
+.why-list li{padding:20px 0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:200px 1fr;gap:20px}
+.why-list b{font-weight:800;font-size:1rem}
+.why-list p{font-size:.93rem;color:var(--muted)}
+
+/* band */
+.band{background:var(--orange);color:#fff;padding:72px 0}
+.band-in{display:flex;justify-content:space-between;align-items:center;gap:30px;flex-wrap:wrap}
+.band h2{font-size:clamp(2.6rem,6vw,4.8rem);max-width:13ch}
+.band p{max-width:40ch;font-size:1rem;margin-bottom:20px}
+
+/* reviews */
+.reviews{background:var(--cream-2)}
+.rev-grid{display:grid;grid-template-columns:repeat(3,1fr);border-top:2px solid var(--ink)}
+.rev{padding:28px 28px 0 0;margin-right:28px;border-right:1px solid var(--line)}
+.rev:last-child{border-right:0;margin-right:0}
+.stars{color:var(--orange);letter-spacing:2px}
+.rev blockquote{font-size:1.05rem;line-height:1.55;margin:12px 0 18px}
+.rev-who b{display:block;font-size:.95rem}
+.rev-who span{font-size:.8rem;color:var(--muted)}
+
+/* contact */
+.contact{background:var(--ink);color:var(--cream)}
+.contact .lead{color:var(--muted-d)}
+.contact .kicker{color:var(--orange-2)}
+.contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:start}
+.contact-cards{display:grid;gap:12px;margin-top:32px}
+.c-card{display:flex;align-items:center;gap:16px;padding:18px 20px;border-radius:var(--r);border:1px solid var(--line-d);transition:border-color .2s}
+.c-card:hover{border-color:var(--orange)}
+.c-ic{width:46px;height:46px;border-radius:6px;background:var(--orange);display:grid;place-items:center}
+.c-ic svg{width:22px;height:22px}
+.c-card small{display:block;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-d);font-weight:700}
+.c-card b{font-size:1.08rem}
+.qform{background:var(--ink-2);border:1px solid var(--line-d);border-radius:var(--r);padding:30px}
+.qform h3{font-size:1.35rem;margin-bottom:4px}
+.qform>p{color:var(--muted-d);font-size:.9rem;margin-bottom:20px}
+
+/* footer */
+footer{background:var(--ink-2);color:var(--muted-d);padding:70px 0 28px;font-size:.9rem}
+.foot-grid{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:40px;margin-bottom:50px}
+.foot-grid h4{color:var(--cream);font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;margin-bottom:16px}
+.foot-grid ul{list-style:none;display:grid;gap:9px}
+.foot-grid a:hover{color:var(--orange-2)}
+.foot-brand .logo{color:var(--cream);margin-bottom:16px}
+.foot-bottom{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;padding-top:22px;border-top:1px solid var(--line-d);font-size:.8rem}
+/* forms */
+.field{display:grid;gap:7px;margin-bottom:16px}
+.field label{font-size:.78rem;font-weight:700;letter-spacing:.04em}
+.field input,.field textarea,.field select{width:100%;padding:.85rem 1rem;border-radius:6px;border:1.5px solid var(--line);background:var(--white);outline:none;transition:border-color .25s,box-shadow .25s;resize:vertical}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--orange);box-shadow:0 0 0 4px rgba(196,80,27,.12)}
+.field.err input,.field.err textarea{border-color:#c0392b}
+.field .msg{font-size:.76rem;color:#c0392b;display:none}
+.field.err .msg{display:block}
+.dark-fields .field input,.dark-fields .field textarea{background:var(--ink);border-color:var(--line-d);color:var(--cream)}
+
+/* floating */
+.wa-float{position:fixed;right:20px;bottom:20px;z-index:40;width:58px;height:58px;border-radius:50%;background:#25d366;color:#fff;display:grid;place-items:center;box-shadow:0 14px 30px -10px rgba(0,0,0,.5);transition:transform .3s var(--ease),bottom .4s var(--ease)}
+.wa-float:hover{transform:scale(1.08)}
+.wa-float svg{width:28px;height:28px}
+.cart-bar{position:fixed;left:14px;right:14px;bottom:14px;z-index:41;background:var(--ink);color:var(--cream);border-radius:10px;padding:12px 12px 12px 20px;display:none;align-items:center;justify-content:space-between;box-shadow:0 20px 40px -12px rgba(0,0,0,.6);transform:translateY(130%);transition:transform .45s var(--ease)}
+.cart-bar b{font-family:'Archivo',sans-serif;font-size:1.15rem}
+.cart-bar small{display:block;font-size:.74rem;color:var(--muted-d)}
+.cart-bar .btn{padding:.75rem 1.2rem}
+
+/* drawer & modal */
+.overlay{position:fixed;inset:0;background:rgba(17,14,11,.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:60;opacity:0;pointer-events:none;transition:opacity .4s}
+.overlay.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(450px,100%);background:var(--cream);z-index:61;display:flex;flex-direction:column;transform:translateX(105%);transition:transform .5s var(--ease)}
+.drawer.on{transform:none}
+.d-head{display:flex;align-items:center;justify-content:space-between;padding:22px 24px;border-bottom:1px solid var(--line)}
+.d-head h3{font-size:1.6rem}
+.x{width:42px;height:42px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;transition:background .3s}
+.x:hover{background:var(--cream-2)}
+.x svg{width:18px;height:18px}
+.d-body{flex:1;overflow-y:auto;padding:18px 24px}
+.d-foot{padding:20px 24px calc(20px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--white)}
+.steps{display:flex;gap:8px;font-size:.72rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:6px}
+.steps .on{color:var(--orange)}
+.ci{display:grid;grid-template-columns:72px 1fr;gap:14px;padding:16px 0;border-bottom:1px solid var(--line)}
+.ci-img{width:72px;height:72px;border-radius:14px;overflow:hidden;background:var(--cream-2);position:relative}
+.ci-img img{width:100%;height:100%;object-fit:cover}
+.ci-top{display:flex;justify-content:space-between;gap:10px}
+.ci-top b{font-size:.98rem;line-height:1.3}
+.ci-top .rm{color:var(--muted);width:28px;height:28px;display:grid;place-items:center;border-radius:50%;flex-shrink:0}
+.ci-top .rm:hover{background:var(--cream-2);color:#c0392b}
+.ci-top .rm svg{width:15px;height:15px}
+.ci small{color:var(--muted);font-size:.8rem}
+.ci-bot{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.ci-bot .price{font-size:1.05rem}
+.sum{display:grid;gap:8px;font-size:.92rem;margin-bottom:16px}
+.sum div{display:flex;justify-content:space-between}
+.sum .free{color:#2e7d32;font-weight:800}
+.sum .tot{font-family:'Archivo',sans-serif;font-size:1.4rem;font-weight:700;padding-top:10px;border-top:1px dashed var(--line)}
+.cart-empty{text-align:center;padding:60px 10px;color:var(--muted)}
+.cart-empty .serif{font-size:1.6rem;color:var(--ink);margin:14px 0 8px}
+.cart-empty svg{width:56px;height:56px;color:var(--orange);margin:0 auto}
+.free-pill{display:flex;align-items:center;gap:10px;background:var(--orange-soft);color:var(--ink);padding:12px 14px;border-radius:14px;font-size:.84rem;font-weight:600;margin-bottom:16px}
+.free-pill svg{width:20px;height:20px;color:var(--orange)}
+.back-link{font-size:.85rem;font-weight:700;color:var(--muted);margin-top:12px;display:block;text-align:center;width:100%}
+.back-link:hover{color:var(--ink)}
+
+.modal{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:20px;opacity:0;pointer-events:none;transition:opacity .35s}
+.modal.on{opacity:1;pointer-events:auto}
+.modal-card{background:var(--cream);border-radius:12px;width:min(520px,100%);max-height:calc(100vh - 40px);overflow-y:auto;padding:34px;position:relative;transform:translateY(20px) scale(.98);transition:transform .45s var(--ease);box-shadow:0 40px 80px -30px rgba(0,0,0,.6)}
+.modal.on .modal-card{transform:none}
+.modal-card .x{position:absolute;top:18px;right:18px}
+.ok-ic{width:64px;height:64px;border-radius:50%;background:var(--orange);color:#fff;display:grid;place-items:center;margin-bottom:18px}
+.ok-ic svg{width:30px;height:30px}
+.oid{display:inline-block;font-family:'Archivo',sans-serif;font-size:1.5rem;background:var(--ink);color:var(--cream);padding:.4rem 1rem;border-radius:12px;margin:10px 0 18px;letter-spacing:.04em}
+.mini-items{font-size:.88rem;display:grid;gap:6px;margin:14px 0;padding:16px;background:var(--white);border-radius:14px}
+.mini-items div{display:flex;justify-content:space-between;gap:10px}
+.note{font-size:.82rem;color:var(--muted);margin-top:10px}
+.warn{background:#fff3cd;color:#6b4e00;padding:12px 14px;border-radius:12px;font-size:.84rem;margin-top:12px}
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,140%);background:var(--ink);color:var(--cream);padding:.85rem 1.3rem;border-radius:999px;font-weight:700;font-size:.88rem;z-index:90;transition:transform .45s var(--ease);display:flex;gap:10px;align-items:center;max-width:calc(100% - 40px);box-shadow:0 18px 40px -14px rgba(0,0,0,.6)}
+.toast.on{transform:translate(-50%,0)}
+.toast i{width:8px;height:8px;border-radius:50%;background:var(--orange);flex-shrink:0}
+
+
+/* ---------- ADMIN ---------- */
+.admin{position:fixed;inset:0;z-index:100;background:var(--cream);overflow-y:auto}
+.admin[hidden]{display:none}
+.a-login{min-height:100%;display:grid;place-items:center;padding:24px;background:var(--ink)}
+.a-login-card{background:var(--cream);border-radius:12px;padding:40px;width:min(420px,100%)}
+.a-login-card h2{font-size:2.2rem;margin:18px 0 6px}
+.a-login-card p{color:var(--muted);font-size:.9rem;margin-bottom:22px}
+.a-app{display:grid;grid-template-columns:250px 1fr;min-height:100%}
+.a-side{background:var(--ink);color:var(--cream);padding:26px 18px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh}
+.a-side .logo{margin-bottom:26px;padding:0 8px}
+.a-tab{display:flex;align-items:center;gap:12px;padding:.8rem 1rem;border-radius:12px;font-weight:600;font-size:.92rem;color:var(--muted-d);text-align:left;transition:background .25s,color .25s;width:100%}
+.a-tab svg{width:18px;height:18px}
+.a-tab:hover{background:var(--ink-3);color:var(--cream)}
+.a-tab.on{background:var(--orange);color:#fff}
+.a-tab .cnt{margin-left:auto;background:var(--cream);color:var(--ink);font-size:.7rem;padding:2px 8px;border-radius:999px;font-weight:800}
+.a-side .spacer{flex:1}
+.a-main{padding:34px clamp(18px,3vw,44px) 60px;min-width:0}
+.a-top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.a-top h1{font-size:2.4rem}
+.mode{padding:14px 18px;border-radius:14px;font-size:.86rem;margin-bottom:24px;line-height:1.5}
+.mode.local{background:#fff3cd;color:#5f4500}
+.mode.live{background:#e3f2e5;color:#1d5b25}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stat{background:var(--white);border:1px solid var(--line);border-radius:18px;padding:22px}
+.stat small{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-weight:800;color:var(--muted)}
+.stat b{display:block;font-family:'Archivo',sans-serif;font-size:2rem;margin-top:8px;line-height:1.1}
+.stat.dark{background:var(--ink);color:var(--cream)}
+.stat.dark small{color:var(--muted-d)}
+.panel{background:var(--white);border:1px solid var(--line);border-radius:20px;padding:24px;margin-bottom:22px}
+.panel-h{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.panel-h h3{font-size:1.4rem}
+.bars{display:flex;align-items:flex-end;gap:12px;height:180px;padding-top:10px}
+.bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;height:100%;justify-content:flex-end}
+.bar i{width:100%;max-width:56px;background:var(--orange);border-radius:10px 10px 4px 4px;min-height:4px;transition:height .8s var(--ease)}
+.bar span{font-size:.72rem;color:var(--muted);font-weight:700}
+.bar em{font-style:normal;font-size:.68rem;font-weight:800}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th{text-align:left;font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:800;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-block;padding:.28rem .7rem;border-radius:999px;font-size:.72rem;font-weight:800;white-space:nowrap}
+.pill.pending{background:#fff3cd;color:#7a5800}
+.pill.accepted{background:#e0ecff;color:#1d4a9c}
+.pill.preparing{background:var(--orange-soft);color:#8a3510}
+.pill.out-for-delivery{background:#ede1ff;color:#5b2aa0}
+.pill.delivered{background:#e3f2e5;color:#1d5b25}
+.pill.rejected{background:#fde2e0;color:#9b2318}
+.sm-btn{padding:.45rem .85rem;border-radius:999px;font-size:.8rem;font-weight:700;border:1.5px solid var(--line);transition:all .25s;white-space:nowrap}
+.sm-btn:hover{border-color:var(--ink)}
+.sm-btn.or{background:var(--orange);border-color:var(--orange);color:#fff}
+.sm-btn.dk{background:var(--ink);border-color:var(--ink);color:var(--cream)}
+.sm-btn.red{color:#b0281c}
+.sm-btn.red:hover{border-color:#b0281c}
+.thumb{width:46px;height:46px;border-radius:10px;object-fit:cover;background:var(--cream-2)}
+.price-in{width:110px;padding:.45rem .6rem;border-radius:10px;border:1.5px solid var(--line);outline:none}
+.price-in:focus{border-color:var(--orange)}
+.a-chips{display:flex;gap:8px;flex-wrap:wrap}
+.a-chips .chip{padding:.45rem .9rem;font-size:.8rem}
+.row-actions{display:flex;gap:6px;flex-wrap:wrap}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 20px;font-size:.88rem;margin:16px 0}
+.detail-grid small{display:block;font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:800}
+.detail-grid .full{grid-column:1/-1}
+.cat-add{display:flex;gap:10px;flex-wrap:wrap}
+.cat-add input{flex:1;min-width:180px;padding:.7rem 1rem;border-radius:12px;border:1.5px solid var(--line);outline:none}
+.check{display:flex;align-items:center;gap:10px;font-size:.9rem;font-weight:600;margin-bottom:16px}
+.check input{width:18px;height:18px;accent-color:var(--orange)}
+.a-mobile-top{display:none}
+
+
+.reveal{opacity:0;transform:translateY(14px);transition:opacity .8s var(--ease),transform .8s var(--ease)}
+.reveal.in{opacity:1;transform:none}
+
+/* ---------- RESPONSIVE ---------- */
+@media (max-width:1080px){
+  .best-grid{grid-template-columns:repeat(2,1fr)}
+  .stats{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:980px){
+  .nav-links{position:fixed;top:0;left:0;right:0;background:var(--ink);flex-direction:column;gap:0;padding:92px 24px 28px;transform:translateY(-105%);transition:transform .45s var(--ease);z-index:-1;box-shadow:0 30px 60px rgba(0,0,0,.5)}
+  .nav.open .nav-links{transform:none}
+  .nav-links a{font-stretch:72%;font-weight:800;font-size:2.1rem;letter-spacing:0;padding:10px 0;border-bottom:1px solid var(--line-d);opacity:1}
+  .menu-toggle{display:block}
+  .nav-wa .t{display:none}
+  .stamp{right:20px;top:104px;font-size:1.15rem;padding:11px 13px;box-shadow:4px 4px 0 var(--ink)}
+  .stamp small{font-size:.62rem}
+  .deal-grid{grid-template-columns:1fr}
+  .why-in,.contact-grid{grid-template-columns:1fr;gap:40px}
+  .why-img{aspect-ratio:16/10}
+  .rev-grid{grid-template-columns:1fr}
+  .rev{border-right:0;margin-right:0;padding:24px 0;border-bottom:1px solid var(--line)}
+  .rev:last-child{border-bottom:0}
+  .foot-grid{grid-template-columns:1fr 1fr}
+  .a-app{grid-template-columns:1fr}
+  .a-side{position:sticky;top:0;height:auto;flex-direction:row;overflow-x:auto;padding:12px;z-index:5;gap:6px}
+  .a-side .logo,.a-side .spacer{display:none}
+  .a-tab{width:auto;white-space:nowrap;padding:.6rem .9rem}
+}
+@media (max-width:640px){
+  .wrap{width:calc(100% - 32px)}
+  .sec{padding:72px 0}
+  .sec-head{margin-bottom:28px}
+  .logo-txt small{display:none}
+  .cart-btn .t{display:none}
+  .hero{min-height:88vh;padding-bottom:48px}
+  .hero h1{font-size:clamp(3.6rem,18vw,5.2rem)}
+  .hero-sub{font-size:1rem}
+  .infobar .wrap{gap:4px 18px;font-size:.78rem}
+  .best-grid{gap:18px 14px}
+  .best-img{aspect-ratio:1}
+  .best h3{font-size:.98rem}
+  .best-row{flex-direction:column;gap:2px}
+  .deal{grid-template-columns:1fr}
+  .deal-media{min-height:200px}
+  .why-list li{grid-template-columns:1fr;gap:4px}
+  .menu-tools{flex-direction:column-reverse;align-items:stretch}
+  .search{width:100%}
+  .chips{width:100%;flex:none}
+  .menu-grid{grid-template-columns:1fr 1fr;gap:12px}
+  .dish-body{padding:12px}
+  .dish h3{font-size:1rem}
+  .dish-desc{font-size:.78rem;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .dish-foot{flex-direction:column;align-items:stretch;gap:10px;margin-top:12px}
+  .price{font-size:1.08rem}
+  .add{justify-content:center}
+  .stepper{justify-content:space-between}
+  .tag{top:8px;left:8px;font-size:.58rem}
+  .foot-grid{grid-template-columns:1fr}
+  .cart-bar{display:flex}
+  body.has-cart .cart-bar{transform:none}
+  body.has-cart .wa-float{bottom:92px}
+  .qform,.modal-card{padding:24px 20px}
+  .stats{grid-template-columns:1fr 1fr;gap:10px}
+  .stat{padding:16px}.stat b{font-size:1.5rem}
+  .detail-grid{grid-template-columns:1fr}
+  .a-top h1{font-size:1.9rem}
+}
+@media (max-width:380px){ .menu-grid{grid-template-columns:1fr} }
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .reveal{opacity:1;transform:none}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ NAVIGATION ============ -->
+<header class="nav" id="nav">
+  <div class="wrap nav-in">
+    <a href="#top" class="logo" aria-label="Bite Boulevard home"><span class="logo-mark">BB</span><span class="logo-txt"><b>Bite Boulevard</b><small>Fresh Food. Big Flavours.</small></span></a>
+    <nav class="nav-links" id="navLinks" aria-label="Main">
+      <a href="#menu">Menu</a>
+      <a href="#deals">Deals</a>
+      <a href="#why">About</a>
+      <a href="#reviews">Reviews</a>
+      <a href="#contact">Contact</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="nav-wa js-wa" href="#" target="_blank" rel="noopener" aria-label="Chat on WhatsApp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l1.65-4.4A8.5 8.5 0 1 1 7.4 19.35Z"/><path d="M9 10c.5 2 2 3.5 4 4l1.2-1.2 2 1-.6 1.6c-3.5.2-7.2-3.5-7-7l1.6-.6 1 2Z"/></svg><span class="t">WhatsApp</span></a>
+      <button class="cart-btn" id="cartBtn" data-act="open-cart" aria-label="Open cart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7Z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg><span class="t">Cart</span><span class="cart-count" id="cartCount">0</span></button>
+      <button class="menu-toggle" id="menuToggle" aria-label="Open navigation" aria-expanded="false"><span></span><span></span></button>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- ============ HERO ============ -->
+<section class="hero" id="top">
+  <img class="hero-bg" src="https://images.unsplash.com/photo-1586190848861-99aa4a171e90?auto=format&fit=crop&w=1800&q=75" alt="Smash burger with melted cheese" fetchpriority="high" onerror="this.remove()">
+  <div class="wrap hero-in">
+    <p class="kicker">Burgers · Pizza · Wings · Shawarma</p>
+    <h1>Fresh food.<br><span>Big flavours.</span></h1>
+    <p class="hero-sub">Smash burgers, crispy fried chicken, pizza and shawarma. Cooked when you order and delivered to your door for free.</p>
+    <div class="hero-cta">
+      <a href="#menu" class="btn btn-orange">See the menu</a>
+      <a href="#" class="btn btn-line js-wa" target="_blank" rel="noopener">Order on WhatsApp</a>
+    </div>
+  </div>
+  <div class="stamp" aria-hidden="true">Free home<br>delivery<small>On every order</small></div>
+</section>
+
+<div class="infobar">
+  <div class="wrap">
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>Free home delivery</span>
+    <span>No minimum order</span>
+    <span>Call / WhatsApp: 0321 8983989</span>
+  </div>
+</div>
+
+<!-- ============ BESTSELLERS ============ -->
+<section class="sec featured" id="featured">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div><span class="kicker">Bestsellers</span><h2 class="h2">Most ordered</h2></div>
+      <a href="#menu" class="btn btn-dark">Full menu</a>
+    </div>
+    <div class="best-grid" id="featGrid"></div>
+  </div>
+</section>
+
+<!-- ============ MENU ============ -->
+<section class="sec menu-sec" id="menu">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div><span class="kicker">Order online</span><h2 class="h2">Menu</h2></div>
+      <p class="lead">All prices in PKR. Delivery is free on every order.</p>
+    </div>
+    <div class="menu-tools">
+      <div class="chips" id="chips" role="tablist" aria-label="Menu categories"></div>
+      <label class="search"><span class="sr">Search menu</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="menuSearch" type="search" placeholder="Search the menu"></label>
+    </div>
+    <div class="menu-grid" id="menuGrid"></div>
+    <p class="empty" id="menuEmpty" hidden>No items found. Try another word or category.</p>
+  </div>
+</section>
+
+<!-- ============ DEALS ============ -->
+<section class="sec deals" id="deals">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div><span class="kicker">Deals &amp; combos</span><h2 class="h2">Deals</h2></div>
+      <p class="lead">Combos for one, for two and for the whole family.</p>
+    </div>
+    <div class="deal-grid" id="dealGrid"></div>
+  </div>
+</section>
+
+<!-- ============ WHY ============ -->
+<section class="sec why" id="why">
+  <div class="wrap why-in">
+    <div class="why-img reveal"><img src="https://images.unsplash.com/photo-1626645738196-c2a7c87a8f58?auto=format&fit=crop&w=1000&q=72" alt="Crispy fried chicken" loading="lazy" onerror="this.onerror=null;this.parentNode.classList.add('noimg')"></div>
+    <div class="reveal">
+      <span class="kicker">Why Bite Boulevard</span>
+      <h2 class="h2" style="margin-top:10px">Why order from us</h2>
+      <ul class="why-list">
+        <li><b>Free delivery</b><p>No delivery charge and no minimum order. The price on the menu is the price you pay.</p></li>
+        <li><b>Cooked when you order</b><p>Your food is made after your order comes in, then packed and sent out hot.</p></li>
+        <li><b>Order your way</b><p>Order from this website or send us a message directly on WhatsApp.</p></li>
+        <li><b>Confirmed on WhatsApp</b><p>Every order is confirmed on WhatsApp, so questions and changes are easy.</p></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FREE DELIVERY ============ -->
+<section class="band" id="delivery">
+  <div class="wrap band-in">
+    <h2 class="reveal">Delivery is free.<br>Every order.</h2>
+    <div class="reveal">
+      <p>No delivery charge and no minimum order. One shawarma or a full family bucket, we bring it to your door.</p>
+      <a href="#menu" class="btn btn-dark">Start your order</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ REVIEWS ============ -->
+<section class="sec reviews" id="reviews">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div><span class="kicker">Reviews</span><h2 class="h2">What customers say</h2></div>
+    </div>
+    <div class="rev-grid" id="revGrid"></div>
+  </div>
+</section>
+
+<!-- ============ CONTACT ============ -->
+<section class="sec contact" id="contact">
+  <div class="wrap contact-grid">
+    <div class="reveal">
+      <span class="kicker">Contact</span>
+      <h2 class="h2" style="margin:10px 0 16px">Order or ask us anything</h2>
+      <p class="lead">Call or WhatsApp us for orders, bulk orders or feedback.</p>
+      <div class="contact-cards">
+        <a class="c-card js-wa" href="#" target="_blank" rel="noopener"><span class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l1.65-4.4A8.5 8.5 0 1 1 7.4 19.35Z"/><path d="M9 10c.5 2 2 3.5 4 4l1.2-1.2 2 1-.6 1.6c-3.5.2-7.2-3.5-7-7l1.6-.6 1 2Z"/></svg></span><span><small>WhatsApp</small><b>0321 8983989</b></span></a>
+        <a class="c-card" href="tel:+923218983989"><span class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg></span><span><small>Call</small><b>0321 8983989</b></span></a>
+        <a class="c-card" href="mailto:hassaan7361@gmail.com"><span class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></span><span><small>Email</small><b>hassaan7361@gmail.com</b></span></a>
+      </div>
+    </div>
+    <form class="qform dark-fields reveal" id="quickForm" novalidate>
+      <h3>Send us a message</h3>
+      <p>Your message opens in WhatsApp, ready to send.</p>
+      <div class="field"><label for="qName">Your name</label><input id="qName" maxlength="60" placeholder="e.g. Ahmed"><span class="msg">Please enter your name.</span></div>
+      <div class="field"><label for="qMsg">Message</label><textarea id="qMsg" rows="5" maxlength="800" placeholder="Your question or bulk order details"></textarea><span class="msg">Please write a message.</span></div>
+      <button class="btn btn-orange btn-block" type="submit">Send on WhatsApp</button>
+    </form>
+  </div>
+</section>
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a href="#top" class="logo"><span class="logo-mark">BB</span><span class="logo-txt"><b>Bite Boulevard</b><small>Fresh Food. Big Flavours.</small></span></a>
+        <p style="max-width:32ch">Burgers, pizza, wings, shawarma and more, with free home delivery on every order.</p>
+      </div>
+      <div><h4>Menu</h4><ul><li><a href="#menu">Full menu</a></li><li><a href="#deals">Deals</a></li><li><a href="#featured">Bestsellers</a></li></ul></div>
+      <div><h4>Order</h4><ul><li><a href="#" data-act="open-cart">Your cart</a></li><li><a class="js-wa" href="#" target="_blank" rel="noopener">Order on WhatsApp</a></li><li><a href="#delivery">Free delivery</a></li></ul></div>
+      <div><h4>Contact</h4><ul><li><a href="tel:+923218983989">0321 8983989</a></li><li><a href="mailto:hassaan7361@gmail.com">hassaan7361@gmail.com</a></li><li><a href="#admin">Staff login</a></li></ul></div>
+    </div>
+    <div class="foot-bottom"><span>© <span id="year"></span> Bite Boulevard</span><span>Prices in PKR · Free home delivery</span></div>
+  </div>
+</footer>
+
+<!-- floating -->
+<a class="wa-float js-wa" href="#" target="_blank" rel="noopener" aria-label="Order on WhatsApp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l1.65-4.4A8.5 8.5 0 1 1 7.4 19.35Z"/><path d="M9 10c.5 2 2 3.5 4 4l1.2-1.2 2 1-.6 1.6c-3.5.2-7.2-3.5-7-7l1.6-.6 1 2Z"/></svg></a>
+<div class="cart-bar" id="cartBar"><div><small id="barCount">0 items</small><b id="barTotal">Rs 0</b></div><button class="btn btn-orange" data-act="open-cart">View cart</button></div>
+
+<!-- ============ CART DRAWER ============ -->
+<div class="overlay" id="overlay"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Your order">
+  <div class="d-head">
+    <div><h3 id="dTitle">Your order</h3><div class="steps"><span id="st1" class="on">1 · Cart</span><span>›</span><span id="st2">2 · Details</span></div></div>
+    <button class="x" data-act="close-drawer" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <!-- step 1 -->
+  <div class="d-body" id="cartView"><div id="cartItems"></div></div>
+  <!-- step 2 -->
+  <form class="d-body" id="checkoutView" hidden novalidate>
+    <div class="free-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>Free home delivery is applied to this order.</div>
+    <div class="field" id="fName"><label for="cName">Full name *</label><input id="cName" autocomplete="name" maxlength="60" placeholder="e.g. Ahmed Raza"><span class="msg">Please enter your name.</span></div>
+    <div class="field" id="fPhone"><label for="cPhone">Mobile number *</label><input id="cPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="03XX XXXXXXX"><span class="msg">Enter a valid Pakistani mobile number, e.g. 0300 1234567.</span></div>
+    <div class="field" id="fAddr"><label for="cAddr">Complete delivery address *</label><textarea id="cAddr" rows="3" autocomplete="street-address" maxlength="300" placeholder="House no., street, block / area, city, nearby landmark"></textarea><span class="msg">Please enter your full address (at least 10 characters).</span></div>
+    <div class="field"><label for="cNotes">Order instructions (optional)</label><textarea id="cNotes" rows="2" maxlength="300" placeholder="Extra spicy, no onions, ring the bell twice…"></textarea></div>
+  </form>
+  <div class="d-foot" id="dFoot">
+    <div class="sum">
+      <div><span>Subtotal</span><span id="sSub">Rs 0</span></div>
+      <div><span>Delivery</span><span class="free">FREE</span></div>
+      <div class="tot"><span>Total</span><span id="sTot">Rs 0</span></div>
+    </div>
+    <button class="btn btn-orange btn-block" id="primaryBtn" data-act="next">Proceed to checkout</button>
+    <button class="back-link" id="backBtn" data-act="back" hidden>← Back to cart</button>
+  </div>
+</aside>
+
+<!-- confirmation modal -->
+<div class="modal" id="okModal" role="dialog" aria-modal="true" aria-labelledby="okTitle">
+  <div class="modal-card">
+    <button class="x" data-act="close-ok" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <div class="ok-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+    <h3 class="serif" id="okTitle" style="font-size:2rem">Order placed!</h3>
+    <p class="note" style="margin-top:6px">Your order ID</p>
+    <div class="oid" id="okId">—</div>
+    <p style="font-size:.92rem">WhatsApp has opened with your full order. <b>Press send in WhatsApp</b> so our kitchen receives it. If WhatsApp didn't open, use the button below.</p>
+    <div class="mini-items" id="okItems"></div>
+    <div id="okWarn"></div>
+    <a class="btn btn-orange btn-block" id="okWa" href="#" target="_blank" rel="noopener" style="margin-top:8px">Send order on WhatsApp</a>
+    <button class="back-link" data-act="close-ok">Continue browsing</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"><i></i><span id="toastMsg"></span></div>
+
+<!-- ============ ADMIN PANEL ============ -->
+<div class="admin" id="admin" hidden>
+  <div class="a-login" id="aLogin">
+    <form class="a-login-card" id="loginForm" novalidate>
+      <span class="logo-mark">BB</span>
+      <h2>Staff login</h2>
+      <p id="loginHint">Sign in to manage orders and the menu.</p>
+      <div class="field" id="emailWrap"><label for="aEmail">Admin email</label><input id="aEmail" type="email" autocomplete="username"></div>
+      <div class="field"><label for="aPass">Password</label><input id="aPass" type="password" autocomplete="current-password"></div>
+      <p class="warn" id="loginErr" hidden></p>
+      <button class="btn btn-orange btn-block" type="submit" id="loginBtn" style="margin-top:8px">Sign in</button>
+      <button class="back-link" type="button" data-adm="exit">← Back to website</button>
+    </form>
+  </div>
+  <div class="a-app" id="aApp" hidden>
+    <aside class="a-side">
+      <a class="logo" href="#" data-adm="exit"><span class="logo-mark">BB</span><span class="logo-txt"><b>Bite Boulevard</b><small>Admin</small></span></a>
+      <button class="a-tab on" data-tab="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Overview</button>
+      <button class="a-tab" data-tab="orders"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 7h12l-1 13H7L6 7Z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>Orders<span class="cnt" id="pendCnt">0</span></button>
+      <button class="a-tab" data-tab="products"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M8 12h8M12 8v8"/></svg>Products</button>
+      <button class="a-tab" data-tab="categories"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Categories</button>
+      <div class="spacer"></div>
+      <button class="a-tab" data-adm="exit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>View website</button>
+      <button class="a-tab" data-adm="logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/></svg>Log out</button>
+    </aside>
+    <main class="a-main">
+      <div class="a-top"><h1 class="serif" id="aTitle">Overview</h1><button class="sm-btn dk" data-adm="refresh">↻ Refresh</button></div>
+      <div id="modeBox"></div>
+      <div id="aContent"></div>
+    </main>
+  </div>
+</div>
+
+<!-- admin modal (order detail / product form) -->
+<div class="modal" id="aModal" role="dialog" aria-modal="true" style="z-index:110">
+  <div class="modal-card" style="width:min(620px,100%)">
+    <button class="x" data-adm="close-modal" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <div id="aModalBody"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   CONFIGURATION — edit these values
+   ===================================================================== */
+const CONFIG = {
+  // Paste your Supabase details here (see setup notes at the top of this file).
+  SUPABASE_URL: '',          // e.g. 'https://abcdxyz.supabase.co'
+  SUPABASE_ANON_KEY: '',     // your anon / publishable key
+
+  // Used ONLY when Supabase is not configured (local mode). Change it!
+  LOCAL_ADMIN_PASSWORD: 'BiteAdmin@2026',
+
+  WHATSAPP_NUMBER: '923218983989',   // 0321 8983989 in international format
+  PHONE_DISPLAY: '0321 8983989',
+  EMAIL: 'hassaan7361@gmail.com'
+};
+
+/* Replace these sample reviews with REAL reviews from your customers before going live. */
+const REVIEWS = [
+  { name: 'Ayesha K.', area: 'Regular customer', text: 'The Boulevard Smash is the best burger I have had in a long time. Crispy edges, proper cheese, and it arrived hot.', stars: 5 },
+  { name: 'Usman R.', area: 'Family order', text: 'Ordered the Family Feast for six people. Everything was fresh, nicely packed and the free delivery made it great value.', stars: 5 },
+  { name: 'Hamza S.', area: 'Late-night order', text: 'Hot wings are genuinely spicy and the shawarma is loaded. Ordering on WhatsApp was quick and simple.', stars: 5 }
+];
+
+/* =====================================================================
+   DEFAULT MENU (used until you load your own menu from the admin panel)
+   ===================================================================== */
+const U = id => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=800&q=72`;
+const DEFAULT_CATEGORIES = [
+  { slug:'burgers', name:'Burgers', sort:1 },
+  { slug:'pizza', name:'Pizza', sort:2 },
+  { slug:'wings', name:'Hot Wings', sort:3 },
+  { slug:'shawarma', name:'Chicken Shawarma', sort:4 },
+  { slug:'sandwiches', name:'Sandwiches', sort:5 },
+  { slug:'fries', name:'French Fries', sort:6 },
+  { slug:'nuggets', name:'Nuggets', sort:7 },
+  { slug:'fried-chicken', name:'Fried Chicken', sort:8 },
+  { slug:'drinks', name:'Drinks', sort:9 },
+  { slug:'deals', name:'Deals & Combos', sort:10 }
+];
+const DEFAULT_PRODUCTS = [
+  { id:'p01', category:'burgers', name:'Boulevard Smash', price:950, featured:true, image:U('1568901346375-23c9450c58cd'), description:'Two smashed beef patties with crispy edges, double cheddar, caramelised onions and our signature Boulevard sauce on a toasted brioche bun.' },
+  { id:'p02', category:'burgers', name:'Classic Zinger', price:650, featured:false, image:U('1606755962773-d324e0a13086'), description:'Hand-breaded crispy chicken fillet, iceberg lettuce and creamy mayo in a soft sesame bun.' },
+  { id:'p03', category:'burgers', name:'Double Trouble Beef', price:1350, featured:false, image:U('1550547660-d9450f859349'), description:'Two thick grilled beef patties, smoked cheese, pickles, jalapeños and smoky BBQ sauce.' },
+  { id:'p04', category:'burgers', name:'Mighty Crunch Chicken', price:1050, featured:false, image:U('1553979459-d2229ba7433b'), description:'Double crispy chicken fillets, cheese slice, fresh lettuce and spicy garlic mayo stacked high.' },
+  { id:'p05', category:'pizza', name:'Chicken Tikka Pizza', price:1450, featured:true, image:U('1565299624946-b28f40a0ae38'), description:'Medium 10". Smoky tikka chicken, onions, green chillies and mozzarella on our hand-stretched, stone-baked base.' },
+  { id:'p06', category:'pizza', name:'Chicken Fajita Pizza', price:1450, featured:false, image:U('1513104890138-7c749659a591'), description:'Medium 10". Fajita-spiced chicken, capsicum, onions, olives and a generous layer of mozzarella.' },
+  { id:'p07', category:'pizza', name:'Beef Pepperoni Pizza', price:1650, featured:false, image:U('1628840042765-356cda07504e'), description:'Medium 10". Classic tomato sauce, stretchy mozzarella and crisp-edged halal beef pepperoni.' },
+  { id:'p08', category:'pizza', name:'Four Cheese Pizza', price:1350, featured:false, image:U('1574071318508-1cdbab80d002'), description:'Medium 10". Mozzarella, cheddar, parmesan and cream cheese with fresh basil and oregano.' },
+  { id:'p09', category:'wings', name:'Hot Wings (6 pcs)', price:650, featured:true, image:U('1608039755401-742074f0548d'), description:'Crispy fried wings tossed in our fiery buffalo glaze, served with a cool garlic dip.' },
+  { id:'p10', category:'wings', name:'BBQ Wings (12 pcs)', price:1200, featured:false, image:U('1527477396000-e27163b481c2'), description:'Twelve oven-roasted wings coated in sticky, smoky BBQ sauce. Good for sharing.' },
+  { id:'p11', category:'shawarma', name:'Chicken Shawarma', price:450, featured:false, image:U('1529006557810-274b9b2fc783'), description:'Marinated grilled chicken, garlic toum, pickles and fries wrapped tight in warm pita bread.' },
+  { id:'p12', category:'shawarma', name:'Shawarma Platter', price:950, featured:false, image:U('1561651823-34feb02250e4'), description:'Sliced chicken shawarma over seasoned rice with fries, salad, hummus and garlic sauce.' },
+  { id:'p13', category:'sandwiches', name:'Boulevard Club Sandwich', price:750, featured:false, image:U('1528735602780-2552fd46c7af'), description:'Triple-layer toasted sandwich with grilled chicken, egg, cheese, lettuce and tomato. Served with fries.' },
+  { id:'p14', category:'sandwiches', name:'Grilled Chicken Panini', price:850, featured:false, image:U('1553909489-cd47e0907980'), description:'Pressed panini filled with herb-grilled chicken, melted mozzarella and sun-dried tomato pesto.' },
+  { id:'p15', category:'fries', name:'Classic Salted Fries', price:350, featured:false, image:U('1573080496219-bb080dd4f877'), description:'Golden, crispy fries lightly salted. Regular serving.' },
+  { id:'p16', category:'fries', name:'Masala Fries', price:380, featured:false, image:U('1541592106381-b31e9677c0e5'), description:'Crispy fries tossed in our house chaat masala blend with a squeeze of lemon.' },
+  { id:'p17', category:'fries', name:'Loaded Cheese Fries', price:750, featured:false, image:U('1630384060421-cb20d0e0649d'), description:'Fries smothered in warm cheese sauce, topped with spicy chicken chunks and jalapeños.' },
+  { id:'p18', category:'nuggets', name:'Chicken Nuggets (6 pcs)', price:450, featured:false, image:U('1562967914-608f82629710'), description:'Tender all-white-meat nuggets with a golden crumb. Served with your choice of dip.' },
+  { id:'p19', category:'nuggets', name:'Chicken Nuggets (10 pcs)', price:700, featured:false, image:U('1562967914-608f82629710'), description:'Ten crispy chicken nuggets with two dips.' },
+  { id:'p20', category:'fried-chicken', name:'Crispy Fried Chicken (2 pcs)', price:750, featured:false, image:U('1626645738196-c2a7c87a8f58'), description:'Two pieces of our hand-breaded, double-fried chicken. Crunchy outside, juicy inside.' },
+  { id:'p21', category:'fried-chicken', name:'Chicken Bucket (8 pcs)', price:2800, featured:false, image:U('1569058242253-92a9c755a0ec'), description:'Eight pieces of crispy fried chicken for the whole table.' },
+  { id:'p22', category:'drinks', name:'Soft Drink (345 ml)', price:150, featured:false, image:U('1622483767028-3f66f32aef97'), description:'Chilled can or bottle of your favourite fizzy drink.' },
+  { id:'p23', category:'drinks', name:'Soft Drink (1.5 L)', price:300, featured:false, image:U('1581636625402-29b2a704ef13'), description:'Family-size bottle, served chilled.' },
+  { id:'p24', category:'drinks', name:'Mint Margarita', price:400, featured:false, image:U('1546173159-315724a31696'), description:'Fresh mint, lemon and crushed ice, blended to order.' },
+  { id:'p25', category:'drinks', name:'Chocolate Shake', price:550, featured:false, image:U('1572490122747-3968b75cc699'), description:'Thick, creamy chocolate shake blended with vanilla ice cream.' },
+  { id:'p26', category:'deals', name:'Solo Deal', price:950, featured:false, image:U('1594212699903-ec8a3eca50f5'), description:'1 Classic Zinger + regular salted fries + 345 ml soft drink.' },
+  { id:'p27', category:'deals', name:'Duo Deal', price:1999, featured:false, image:U('1561758033-d89a9ad46330'), description:'2 Classic Zingers + 2 regular fries + 6 pcs hot wings + 2 soft drinks (345 ml).' },
+  { id:'p28', category:'deals', name:'Pizza Party Deal', price:3499, featured:false, image:U('1513104890138-7c749659a591'), description:'2 medium pizzas of your choice + 6 pcs hot wings + garlic dip + 1.5 L soft drink.' },
+  { id:'p29', category:'deals', name:'Family Feast', price:4499, featured:true, image:U('1626645738196-c2a7c87a8f58'), description:'8 pcs fried chicken + 2 Classic Zingers + 2 large fries + 6 pcs nuggets + 1.5 L soft drink. Feeds 4–5.' }
+];
+const CAT_FALLBACK_IMG = { burgers:U('1568901346375-23c9450c58cd'), pizza:U('1513104890138-7c749659a591'), wings:U('1608039755401-742074f0548d'), shawarma:U('1529006557810-274b9b2fc783'), sandwiches:U('1528735602780-2552fd46c7af'), fries:U('1573080496219-bb080dd4f877'), nuggets:U('1562967914-608f82629710'), 'fried-chicken':U('1626645738196-c2a7c87a8f58'), drinks:U('1622483767028-3f66f32aef97'), deals:U('1594212699903-ec8a3eca50f5') };
+const STATUSES = ['Pending','Accepted','Preparing','Out for Delivery','Delivered','Rejected'];
+
+/* =====================================================================
+   HELPERS
+   ===================================================================== */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const fmt = n => 'Rs ' + Math.round(Number(n) || 0).toLocaleString('en-US');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+const clone = o => JSON.parse(JSON.stringify(o));
+const waLink = (text, number = CONFIG.WHATSAPP_NUMBER) => `https://wa.me/${number}${text ? '?text=' + encodeURIComponent(text) : ''}`;
+const slugify = s => String(s).toLowerCase().trim().replace(/&/g,'and').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+const imgFail = `onerror="this.onerror=null;this.parentNode.classList.add('noimg')"`;
+const fmtDate = iso => { const d = new Date(iso); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) + ', ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); };
+const statusClass = s => String(s).toLowerCase().replace(/\s+/g,'-');
+function normalizePhone(raw) {
+  let d = String(raw).replace(/\D/g, '');
+  if (d.startsWith('0092')) d = d.slice(2);
+  if (d.startsWith('92') && d.length === 12) d = '0' + d.slice(2);
+  if (d.startsWith('3') && d.length === 10) d = '0' + d;
+  return /^03\d{9}$/.test(d) ? d : null;
+}
+function makeOrderCode() {
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let r = ''; for (let i = 0; i < 4; i++) r += chars[Math.floor(Math.random() * chars.length)];
+  return `BB-${String(d.getFullYear()).slice(2)}${p(d.getMonth()+1)}${p(d.getDate())}-${r}`;
+}
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src)); document.head.appendChild(s); });
+}
+let toastT;
+function toast(msg) { $('#toastMsg').textContent = msg; $('#toast').classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => $('#toast').classList.remove('on'), 2400); }
+
+/* =====================================================================
+   DATA LAYER — Supabase when configured, otherwise this browser's storage
+   ===================================================================== */
+const DB = {
+  mode: 'local', sb: null,
+  async init() {
+    if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY) {
+      try {
+        await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2');
+        this.sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+        this.mode = 'supabase';
+      } catch (e) { console.warn('[Bite Boulevard] Supabase could not load — running in local mode.', e); }
+    }
+  },
+  async categories() {
+    if (this.mode === 'supabase') { const { data, error } = await this.sb.from('categories').select('*').order('sort'); if (error) throw error; return data; }
+    return store.get('bb_categories', clone(DEFAULT_CATEGORIES));
+  },
+  async products() {
+    if (this.mode === 'supabase') { const { data, error } = await this.sb.from('products').select('*').order('created_at'); if (error) throw error; return data.map(p => ({...p, id:String(p.id)})); }
+    return store.get('bb_products', clone(DEFAULT_PRODUCTS));
+  },
+  async saveProduct(p) {
+    const row = { name:p.name, description:p.description, price:p.price, category:p.category, image:p.image, featured:!!p.featured };
+    if (this.mode === 'supabase') {
+      const q = p.id ? this.sb.from('products').update(row).eq('id', p.id) : this.sb.from('products').insert(row);
+      const { error } = await q; if (error) throw error; return;
+    }
+    const list = await this.products();
+    if (p.id) { const i = list.findIndex(x => x.id === p.id); if (i > -1) list[i] = { ...list[i], ...row }; }
+    else list.push({ id:'p' + Date.now().toString(36), ...row });
+    store.set('bb_products', list);
+  },
+  async deleteProduct(id) {
+    if (this.mode === 'supabase') { const { error } = await this.sb.from('products').delete().eq('id', id); if (error) throw error; return; }
+    store.set('bb_products', (await this.products()).filter(p => p.id !== id));
+  },
+  async saveCategory(c) {
+    if (this.mode === 'supabase') { const { error } = await this.sb.from('categories').upsert(c); if (error) throw error; return; }
+    const list = await this.categories(); const i = list.findIndex(x => x.slug === c.slug);
+    if (i > -1) list[i] = c; else list.push(c);
+    store.set('bb_categories', list);
+  },
+  async deleteCategory(slug) {
+    if (this.mode === 'supabase') { const { error } = await this.sb.from('categories').delete().eq('slug', slug); if (error) throw error; return; }
+    store.set('bb_categories', (await this.categories()).filter(c => c.slug !== slug));
+  },
+  async createOrder(o) {
+    if (this.mode === 'supabase') {
+      const { error } = await this.sb.from('orders').insert({ order_code:o.order_code, customer_name:o.customer_name, phone:o.phone, address:o.address, notes:o.notes, items:o.items, subtotal:o.subtotal, total:o.total, status:'Pending' });
+      if (error) throw error; return;
+    }
+    const list = store.get('bb_orders', []); list.unshift({ id:'o' + Date.now().toString(36), ...o }); store.set('bb_orders', list);
+  },
+  async orders() {
+    if (this.mode === 'supabase') { const { data, error } = await this.sb.from('orders').select('*').order('created_at', { ascending:false }).limit(1000); if (error) throw error; return data; }
+    return store.get('bb_orders', []);
+  },
+  async setStatus(id, status) {
+    if (this.mode === 'supabase') { const { error } = await this.sb.from('orders').update({ status }).eq('id', id); if (error) throw error; return; }
+    const list = store.get('bb_orders', []); const o = list.find(x => x.id === id); if (o) o.status = status; store.set('bb_orders', list);
+  },
+  async seed() {
+    const { error: e1 } = await this.sb.from('categories').upsert(DEFAULT_CATEGORIES); if (e1) throw e1;
+    const rows = DEFAULT_PRODUCTS.map(({ id, ...r }) => r);
+    const { error: e2 } = await this.sb.from('products').insert(rows); if (e2) throw e2;
+  }
+};
+
+/* =====================================================================
+   STATE
+   ===================================================================== */
+const state = { products: [], categories: [], cart: store.get('bb_cart', []), filter: 'all', query: '', step: 'cart', lastOrder: null };
+const catName = slug => (state.categories.find(c => c.slug === slug) || {}).name || slug;
+const findProduct = id => state.products.find(p => String(p.id) === String(id));
+
+async function loadMenu() {
+  try {
+    const [cats, prods] = await Promise.all([DB.categories(), DB.products()]);
+    if (prods.length) { state.categories = cats.length ? cats : clone(DEFAULT_CATEGORIES); state.products = prods; }
+    else { state.categories = clone(DEFAULT_CATEGORIES); state.products = clone(DEFAULT_PRODUCTS); }
+  } catch (e) {
+    console.warn('[Bite Boulevard] Could not load menu from database — showing default menu.', e);
+    state.categories = clone(DEFAULT_CATEGORIES); state.products = clone(DEFAULT_PRODUCTS);
+  }
+  syncCart();
+  renderPublic();
+}
+
+/* =====================================================================
+   PUBLIC RENDERING
+   ===================================================================== */
+const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+const qtyOf = id => (state.cart.find(x => x.id === String(id)) || {}).qty || 0;
+
+function controlHTML(id) {
+  const q = qtyOf(id);
+  if (!q) return `<button class="add" data-act="add" data-id="${esc(id)}">${ICON_PLUS}Add to cart</button>`;
+  return `<div class="stepper"><button data-act="dec" data-id="${esc(id)}" aria-label="Decrease">−</button><span>${q}</span><button data-act="inc" data-id="${esc(id)}" aria-label="Increase">+</button></div>`;
+}
+function refreshControls() { $$('[data-ctl]').forEach(el => { el.innerHTML = controlHTML(el.dataset.ctl); }); }
+
+function renderPublic() { renderFeatured(); renderChips(); renderMenu(); renderDeals(); }
+
+function renderFeatured() {
+  let list = state.products.filter(p => p.featured);
+  if (list.length < 4) list = list.concat(state.products.filter(p => !p.featured && p.category !== 'drinks')).slice(0, 4);
+  list = list.slice(0, 4);
+  $('#featGrid').innerHTML = list.map(p => `
+    <article class="best">
+      <div class="best-img"><img src="${esc(p.image)}" alt="${esc(p.name)}" loading="lazy" ${imgFail}></div>
+      <div class="best-row"><h3>${esc(p.name)}</h3><span class="price">${fmt(p.price)}</span></div>
+      <p>${esc(p.description)}</p>
+      <div data-ctl="${esc(p.id)}">${controlHTML(p.id)}</div>
+    </article>`).join('');
+}
+
+function renderChips() {
+  const cats = state.categories.filter(c => state.products.some(p => p.category === c.slug));
+  if (state.filter !== 'all' && !cats.some(c => c.slug === state.filter)) state.filter = 'all';
+  $('#chips').innerHTML = [`<button class="chip ${state.filter==='all'?'on':''}" data-act="filter" data-id="all" role="tab">All</button>`]
+    .concat(cats.map(c => `<button class="chip ${state.filter===c.slug?'on':''}" data-act="filter" data-id="${esc(c.slug)}" role="tab">${esc(c.name)}</button>`)).join('');
+}
+
+function renderMenu() {
+  const q = state.query.trim().toLowerCase();
+  const order = slug => (state.categories.find(c => c.slug === slug) || { sort: 99 }).sort;
+  const list = state.products
+    .filter(p => state.filter === 'all' || p.category === state.filter)
+    .filter(p => !q || (p.name + ' ' + p.description + ' ' + catName(p.category)).toLowerCase().includes(q))
+    .sort((a, b) => order(a.category) - order(b.category));
+  $('#menuGrid').innerHTML = list.map((p, i) => `
+    <article class="dish" style="--i:${Math.min(i, 12)}">
+      <div class="dish-media"><img src="${esc(p.image)}" alt="${esc(p.name)}" loading="lazy" ${imgFail}>${p.featured ? '<span class="tag">Bestseller</span>' : ''}</div>
+      <div class="dish-body">
+        <p class="dish-cat">${esc(catName(p.category))}</p>
+        <h3>${esc(p.name)}</h3>
+        <p class="dish-desc">${esc(p.description)}</p>
+        <div class="dish-foot"><span class="price">${fmt(p.price)}</span><div data-ctl="${esc(p.id)}">${controlHTML(p.id)}</div></div>
+      </div>
+    </article>`).join('');
+  $('#menuEmpty').hidden = list.length > 0;
+}
+
+function renderDeals() {
+  const list = state.products.filter(p => p.category === 'deals');
+  $('#deals').hidden = !list.length;
+  $('#dealGrid').innerHTML = list.map(p => `
+    <article class="deal reveal in">
+      <div class="deal-media"><img src="${esc(p.image)}" alt="${esc(p.name)}" loading="lazy" ${imgFail}></div>
+      <div class="deal-body">
+        <p class="dish-cat">Deal</p><h3>${esc(p.name)}</h3><p>${esc(p.description)}</p>
+        <div class="deal-foot"><span class="price">${fmt(p.price)}</span><div data-ctl="${esc(p.id)}">${controlHTML(p.id)}</div></div>
+      </div>
+    </article>`).join('');
+}
+
+function renderReviews() {
+  $('#revGrid').innerHTML = REVIEWS.map(r => `
+    <figure class="rev reveal">
+      <div class="stars" aria-label="${r.stars} out of 5 stars">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</div>
+      <blockquote>${esc(r.text)}</blockquote>
+      <figcaption class="rev-who"><b>${esc(r.name)}</b><span>${esc(r.area)}</span></figcaption>
+    </figure>`).join('');
+}
+
+/* =====================================================================
+   CART
+   ===================================================================== */
+function syncCart() {
+  state.cart = state.cart.filter(it => findProduct(it.id)).map(it => { const p = findProduct(it.id); return { ...it, name:p.name, price:Number(p.price), image:p.image }; });
+  cartChanged(true);
+}
+function totals() {
+  const subtotal = state.cart.reduce((s, i) => s + i.price * i.qty, 0);
+  return { subtotal, delivery: 0, total: subtotal, count: state.cart.reduce((s, i) => s + i.qty, 0) };
+}
+function addToCart(id) {
+  const p = findProduct(id); if (!p) return;
+  const it = state.cart.find(x => x.id === String(p.id));
+  if (it) it.qty = Math.min(it.qty + 1, 99);
+  else state.cart.push({ id:String(p.id), name:p.name, price:Number(p.price), image:p.image, qty:1 });
+  cartChanged();
+  toast(`${p.name} added to cart`);
+  const b = $('#cartBtn'); b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump');
+}
+function changeQty(id, d) {
+  const it = state.cart.find(x => x.id === String(id)); if (!it) return;
+  it.qty = Math.min(it.qty + d, 99);
+  if (it.qty <= 0) state.cart = state.cart.filter(x => x.id !== String(id));
+  cartChanged();
+}
+function removeItem(id) { state.cart = state.cart.filter(x => x.id !== String(id)); cartChanged(); }
+function cartChanged(silent) {
+  store.set('bb_cart', state.cart);
+  renderCart();
+  if (!silent) refreshControls();
+}
+function renderCart() {
+  const t = totals();
+  $('#cartCount').textContent = t.count;
+  $('#barCount').textContent = `${t.count} item${t.count === 1 ? '' : 's'} · free delivery`;
+  $('#barTotal').textContent = fmt(t.total);
+  document.body.classList.toggle('has-cart', t.count > 0);
+  $('#sSub').textContent = fmt(t.subtotal);
+  $('#sTot').textContent = fmt(t.total);
+  if (!state.cart.length) {
+    $('#cartItems').innerHTML = `<div class="cart-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7Z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg><p class="serif">Your cart is empty</p><p>Add something delicious from the menu.</p><a href="#menu" class="btn btn-dark" data-act="close-drawer" style="margin-top:20px">Browse the menu</a></div>`;
+    if (state.step === 'checkout') setStep('cart');
+  } else {
+    $('#cartItems').innerHTML = state.cart.map(it => `
+      <div class="ci">
+        <div class="ci-img"><img src="${esc(it.image)}" alt="" ${imgFail}></div>
+        <div>
+          <div class="ci-top"><b>${esc(it.name)}</b><button class="rm" data-act="remove" data-id="${esc(it.id)}" aria-label="Remove ${esc(it.name)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
+          <small>${fmt(it.price)} each</small>
+          <div class="ci-bot"><div class="stepper light"><button data-act="dec" data-id="${esc(it.id)}" aria-label="Decrease">−</button><span>${it.qty}</span><button data-act="inc" data-id="${esc(it.id)}" aria-label="Increase">+</button></div><span class="price">${fmt(it.price * it.qty)}</span></div>
+        </div>
+      </div>`).join('');
+  }
+  $('#primaryBtn').disabled = !state.cart.length;
+}
+function setStep(step) {
+  state.step = step;
+  const co = step === 'checkout';
+  $('#cartView').hidden = co; $('#checkoutView').hidden = !co;
+  $('#backBtn').hidden = !co;
+  $('#primaryBtn').textContent = co ? 'Place order & send on WhatsApp' : 'Proceed to checkout';
+  $('#dTitle').textContent = co ? 'Delivery details' : 'Your order';
+  $('#st1').classList.toggle('on', !co); $('#st2').classList.toggle('on', co);
+  if (co) { const saved = store.get('bb_customer', null); if (saved) { $('#cName').value ||= saved.name || ''; $('#cPhone').value ||= saved.phone || ''; $('#cAddr').value ||= saved.address || ''; } setTimeout(() => $('#cName').focus(), 350); }
+}
+function openDrawer() { closeNav(); $('#drawer').classList.add('on'); $('#overlay').classList.add('on'); $('#drawer').setAttribute('aria-hidden','false'); document.body.classList.add('lock'); }
+function closeDrawer() { $('#drawer').classList.remove('on'); $('#overlay').classList.remove('on'); $('#drawer').setAttribute('aria-hidden','true'); document.body.classList.remove('lock'); setTimeout(() => setStep('cart'), 400); }
+
+/* =====================================================================
+   CHECKOUT & WHATSAPP
+   ===================================================================== */
+function validateCheckout() {
+  const name = $('#cName').value.trim(), phone = normalizePhone($('#cPhone').value), address = $('#cAddr').value.trim();
+  $('#fName').classList.toggle('err', name.length < 2);
+  $('#fPhone').classList.toggle('err', !phone);
+  $('#fAddr').classList.toggle('err', address.length < 10);
+  if (name.length < 2 || !phone || address.length < 10) { const f = $('.field.err input, .field.err textarea', $('#checkoutView')); if (f) f.focus(); return null; }
+  return { name, phone, address, notes: $('#cNotes').value.trim() };
+}
+function buildOrderMessage(o) {
+  const lines = [
+    '*NEW ORDER | BITE BOULEVARD*',
+    `Order ID: *${o.order_code}*`,
+    `Date: ${fmtDate(o.created_at)}`,
+    '',
+    '*Customer details*',
+    `Name: ${o.customer_name}`,
+    `Mobile: ${o.phone}`,
+    `Address: ${o.address}`,
+    '',
+    '*Order items*'
+  ];
+  o.items.forEach((it, i) => lines.push(`${i + 1}. ${it.name} x ${it.qty} (${fmt(it.price)} each) = ${fmt(it.price * it.qty)}`));
+  lines.push('', `Subtotal: ${fmt(o.subtotal)}`, 'Delivery: FREE (Rs 0)', `*Total: ${fmt(o.total)}*`);
+  if (o.notes) lines.push('', `*Instructions:* ${o.notes}`);
+  lines.push('', 'Please confirm my order. Thank you!');
+  return lines.join('\n');
+}
+async function placeOrder() {
+  const c = validateCheckout(); if (!c) return;
+  if (!state.cart.length) return;
+  const t = totals();
+  const order = {
+    order_code: makeOrderCode(), customer_name: c.name, phone: c.phone, address: c.address, notes: c.notes,
+    items: state.cart.map(i => ({ id:i.id, name:i.name, price:i.price, qty:i.qty })),
+    subtotal: t.subtotal, total: t.total, status: 'Pending', created_at: new Date().toISOString()
+  };
+  const url = waLink(buildOrderMessage(order));
+  // open WhatsApp right away (inside the click) so browsers don't block it
+  window.open(url, '_blank', 'noopener');
+  store.set('bb_customer', { name:c.name, phone:c.phone, address:c.address });
+
+  const btn = $('#primaryBtn'); btn.disabled = true; btn.textContent = 'Saving order…';
+  let warn = '';
+  try { await DB.createOrder(order); }
+  catch (e) {
+    console.error('[Bite Boulevard] Order could not be saved to the database:', e);
+    warn = 'Your order was not saved online, but it is in your WhatsApp message. Please make sure you press send in WhatsApp.';
+  }
+  state.lastOrder = order;
+  $('#okId').textContent = order.order_code;
+  $('#okItems').innerHTML = order.items.map(i => `<div><span>${esc(i.name)} × ${i.qty}</span><b>${fmt(i.price * i.qty)}</b></div>`).join('') +
+    `<div><span>Delivery</span><b style="color:#2e7d32">FREE</b></div><div style="border-top:1px dashed var(--line);padding-top:6px"><b>Total</b><b>${fmt(order.total)}</b></div>`;
+  $('#okWarn').innerHTML = warn ? `<p class="warn">${esc(warn)}</p>` : '';
+  $('#okWa').href = url;
+
+  state.cart = []; cartChanged();
+  $('#checkoutView').reset(); $$('.field.err').forEach(f => f.classList.remove('err'));
+  btn.disabled = false;
+  closeDrawer();
+  $('#okModal').classList.add('on'); document.body.classList.add('lock');
+}
+
+/* =====================================================================
+   NAV / GENERAL UI
+   ===================================================================== */
+function closeNav() { $('#nav').classList.remove('open'); $('#menuToggle').setAttribute('aria-expanded','false'); }
+$('#menuToggle').addEventListener('click', () => { const o = $('#nav').classList.toggle('open'); $('#menuToggle').setAttribute('aria-expanded', String(o)); });
+$$('#navLinks a').forEach(a => a.addEventListener('click', closeNav));
+const onScroll = () => $('#nav').classList.toggle('scrolled', window.scrollY > 30);
+window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
+$$('.js-wa').forEach(a => a.href = waLink('Hi Bite Boulevard! I would like to place an order.'));
+$('#year').textContent = new Date().getFullYear();
+
+$('#menuSearch').addEventListener('input', e => { state.query = e.target.value; renderMenu(); });
+$('#overlay').addEventListener('click', closeDrawer);
+$('#checkoutView').addEventListener('submit', e => { e.preventDefault(); placeOrder(); });
+$$('#checkoutView input, #checkoutView textarea').forEach(el => el.addEventListener('input', () => el.closest('.field').classList.remove('err')));
+
+$('#quickForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const n = $('#qName').value.trim(), m = $('#qMsg').value.trim();
+  $('#qName').closest('.field').classList.toggle('err', !n);
+  $('#qMsg').closest('.field').classList.toggle('err', !m);
+  if (!n || !m) return;
+  window.open(waLink(`Hi Bite Boulevard, this is ${n}.\n\n${m}`), '_blank', 'noopener');
+  e.target.reset();
+});
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-act]'); if (!t) return;
+  const id = t.dataset.id;
+  switch (t.dataset.act) {
+    case 'add': addToCart(id); break;
+    case 'inc': changeQty(id, 1); break;
+    case 'dec': changeQty(id, -1); break;
+    case 'remove': removeItem(id); break;
+    case 'filter': state.filter = id; renderChips(); renderMenu(); break;
+    case 'open-cart': e.preventDefault(); openDrawer(); break;
+    case 'close-drawer': closeDrawer(); break;
+    case 'next': if (state.step === 'cart') { if (state.cart.length) setStep('checkout'); } else placeOrder(); break;
+    case 'back': setStep('cart'); break;
+    case 'close-ok': $('#okModal').classList.remove('on'); document.body.classList.remove('lock'); break;
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if ($('#aModal').classList.contains('on')) return Admin.closeModal();
+  if ($('#okModal').classList.contains('on')) { $('#okModal').classList.remove('on'); document.body.classList.remove('lock'); return; }
+  if ($('#drawer').classList.contains('on')) closeDrawer();
+  closeNav();
+});
+
+/* reveal on scroll */
+const io = 'IntersectionObserver' in window ? new IntersectionObserver(entries => entries.forEach(en => { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } }), { threshold: .12 }) : null;
+function observeReveals() { $$('.reveal:not(.in)').forEach(el => io ? io.observe(el) : el.classList.add('in')); }
+
+/* =====================================================================
+   ADMIN PANEL
+   ===================================================================== */
+const Admin = {
+  orders: [], products: [], tab: 'overview', orderFilter: 'all', poll: null, isOpen: false,
+  async open() {
+    this.isOpen = true;
+    $('#admin').hidden = false; document.body.classList.add('lock');
+    closeDrawer();
+    const live = DB.mode === 'supabase';
+    $('#emailWrap').hidden = !live;
+    $('#loginHint').textContent = live ? 'Sign in with the admin user you created in Supabase.' : 'Local mode: enter the admin password set in CONFIG.';
+    if (await this.authed()) this.enter(); else this.showLogin();
+  },
+  close() {
+    this.isOpen = false;
+    $('#admin').hidden = true; this.closeModal(); document.body.classList.remove('lock');
+    clearInterval(this.poll);
+    if (location.hash === '#admin') history.replaceState(null, '', location.pathname + location.search);
+  },
+  async authed() {
+    if (DB.mode === 'supabase') { const { data } = await DB.sb.auth.getSession(); return !!data.session; }
+    try { return sessionStorage.getItem('bb_admin') === '1'; } catch { return false; }
+  },
+  showLogin() { $('#aLogin').hidden = false; $('#aApp').hidden = true; $('#loginErr').hidden = true; setTimeout(() => (DB.mode === 'supabase' ? $('#aEmail') : $('#aPass')).focus(), 50); },
+  async login() {
+    const err = $('#loginErr'), btn = $('#loginBtn'); err.hidden = true;
+    const pw = $('#aPass').value;
+    if (DB.mode === 'supabase') {
+      btn.disabled = true; btn.textContent = 'Signing in…';
+      const { error } = await DB.sb.auth.signInWithPassword({ email: $('#aEmail').value.trim(), password: pw });
+      btn.disabled = false; btn.textContent = 'Sign in';
+      if (error) { err.textContent = error.message; err.hidden = false; return; }
+    } else {
+      if (pw !== CONFIG.LOCAL_ADMIN_PASSWORD) { err.textContent = 'Incorrect password.'; err.hidden = false; return; }
+      try { sessionStorage.setItem('bb_admin', '1'); } catch {}
+    }
+    $('#aPass').value = '';
+    this.enter();
+  },
+  async logout() {
+    if (DB.mode === 'supabase') await DB.sb.auth.signOut();
+    try { sessionStorage.removeItem('bb_admin'); } catch {}
+    clearInterval(this.poll);
+    this.showLogin();
+  },
+  async enter() {
+    $('#aLogin').hidden = true; $('#aApp').hidden = false;
+    $('#modeBox').innerHTML = DB.mode === 'supabase'
+      ? `<div class="mode live"><b>Connected to Supabase.</b> Every customer order is saved here and the list refreshes automatically every 20 seconds.</div>`
+      : `<div class="mode local"><b>Local mode: no database connected.</b> Orders shown here are only those placed in <u>this browser</u>, and menu changes only affect this browser. Real customer orders reach you on WhatsApp. To receive every order here and update the live menu, connect Supabase (instructions at the top of the file).</div>`;
+    await this.refresh();
+    clearInterval(this.poll);
+    this.poll = setInterval(() => { if (this.isOpen && !document.hidden) this.refresh(true); }, 20000);
+  },
+  async refresh(silent) {
+    try {
+      const [orders, cats, prods] = await Promise.all([DB.orders(), DB.categories(), DB.products()]);
+      this.orders = orders; this.products = prods;
+      if (cats.length) state.categories = cats;
+      if (prods.length) { state.products = prods; syncCart(); renderPublic(); }
+    } catch (e) {
+      console.error(e);
+      if (!silent) toast('Could not load data: ' + (e.message || e));
+      if (/JWT|session|auth/i.test(e.message || '')) return this.showLogin();
+    }
+    $('#pendCnt').textContent = this.orders.filter(o => o.status === 'Pending').length;
+    if (!silent || !$('#aModal').classList.contains('on')) this.render();
+  },
+  setTab(tab) { this.tab = tab; $$('.a-tab[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab)); this.render(); $('.a-main').scrollIntoView({ block:'start' }); },
+  render() {
+    const titles = { overview:'Overview', orders:'Orders', products:'Products', categories:'Categories' };
+    $('#aTitle').textContent = titles[this.tab];
+    $('#aContent').innerHTML = this['view_' + this.tab]();
+  },
+  stats() {
+    const valid = this.orders.filter(o => o.status !== 'Rejected');
+    const today = new Date().toDateString();
+    const todays = valid.filter(o => new Date(o.created_at).toDateString() === today);
+    return {
+      total: this.orders.length,
+      pending: this.orders.filter(o => o.status === 'Pending').length,
+      todaySales: todays.reduce((s, o) => s + Number(o.total), 0), todayCount: todays.length,
+      revenue: this.orders.filter(o => o.status === 'Delivered').reduce((s, o) => s + Number(o.total), 0),
+      booked: valid.reduce((s, o) => s + Number(o.total), 0)
+    };
+  },
+  orderRow(o) {
+    return `<tr>
+      <td><b>${esc(o.order_code)}</b><br><small style="color:var(--muted)">${esc(fmtDate(o.created_at))}</small></td>
+      <td>${esc(o.customer_name)}<br><small style="color:var(--muted)">${esc(o.phone)}</small></td>
+      <td><b>${fmt(o.total)}</b></td>
+      <td><span class="pill ${statusClass(o.status)}">${esc(o.status)}</span></td>
+      <td><button class="sm-btn dk" data-adm="view-order" data-id="${esc(o.id)}">View</button></td>
+    </tr>`;
+  },
+  ordersTable(list) {
+    if (!list.length) return `<p class="empty" style="padding:30px 0">No orders yet.</p>`;
+    return `<div class="tbl-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>${list.map(o => this.orderRow(o)).join('')}</tbody></table></div>`;
+  },
+  view_overview() {
+    const s = this.stats();
+    const days = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d; });
+    const sums = days.map(d => this.orders.filter(o => o.status !== 'Rejected' && new Date(o.created_at).toDateString() === d.toDateString()).reduce((a, o) => a + Number(o.total), 0));
+    const max = Math.max(...sums, 1);
+    return `
+      <div class="stats">
+        <div class="stat dark"><small>Total orders</small><b>${s.total}</b></div>
+        <div class="stat"><small>Pending</small><b>${s.pending}</b></div>
+        <div class="stat"><small>Today's sales</small><b>${fmt(s.todaySales)}</b><small style="letter-spacing:0;text-transform:none;font-weight:600">${s.todayCount} order${s.todayCount===1?'':'s'} today</small></div>
+        <div class="stat"><small>Total revenue</small><b>${fmt(s.revenue)}</b><small style="letter-spacing:0;text-transform:none;font-weight:600">from delivered orders</small></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h3 class="serif">Last 7 days</h3><small style="color:var(--muted)">Booked sales (all orders except rejected): ${fmt(s.booked)}</small></div>
+        <div class="bars">${days.map((d, i) => `<div class="bar"><em>${sums[i] ? fmt(sums[i]).replace('Rs ','') : ''}</em><i style="height:${Math.max(sums[i] / max * 100, 2)}%"></i><span>${d.toLocaleDateString('en-GB',{weekday:'short'})}</span></div>`).join('')}</div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h3 class="serif">Latest orders</h3><button class="sm-btn" data-tab-go="orders">See all orders →</button></div>
+        ${this.ordersTable(this.orders.slice(0, 6))}
+      </div>`;
+  },
+  view_orders() {
+    const list = this.orderFilter === 'all' ? this.orders : this.orders.filter(o => o.status === this.orderFilter);
+    return `<div class="panel">
+      <div class="panel-h"><div class="a-chips">${['all', ...STATUSES].map(s => `<button class="chip ${this.orderFilter===s?'on':''}" data-adm="order-filter" data-id="${esc(s)}">${s==='all'?'All':esc(s)} (${s==='all'?this.orders.length:this.orders.filter(o=>o.status===s).length})</button>`).join('')}</div></div>
+      ${this.ordersTable(list)}
+    </div>`;
+  },
+  view_products() {
+    const seed = DB.mode === 'supabase' && !this.products.length
+      ? `<div class="mode local"><b>Your database menu is empty.</b> The website is currently showing the built-in starter menu. Load it into your database so you can edit prices and products. <div style="margin-top:12px"><button class="sm-btn or" data-adm="seed">Load starter menu into database</button></div></div>` : '';
+    const list = this.products.length ? this.products : [];
+    const rows = list.map(p => `<tr>
+      <td><img class="thumb" src="${esc(p.image)}" alt="" onerror="this.style.visibility='hidden'"></td>
+      <td><b>${esc(p.name)}</b>${p.featured ? ' <span class="pill preparing">Featured</span>' : ''}<br><small style="color:var(--muted)">${esc(catName(p.category))}</small></td>
+      <td><input class="price-in" type="number" min="0" step="10" value="${Number(p.price)}" data-price="${esc(p.id)}" aria-label="Price for ${esc(p.name)}"></td>
+      <td><div class="row-actions"><button class="sm-btn" data-adm="edit-product" data-id="${esc(p.id)}">Edit</button><button class="sm-btn red" data-adm="delete-product" data-id="${esc(p.id)}">Delete</button></div></td>
+    </tr>`).join('');
+    return `${seed}<div class="panel">
+      <div class="panel-h"><h3 class="serif">${list.length} products</h3><button class="sm-btn or" data-adm="new-product" ${DB.mode==='supabase'&&!this.products.length?'disabled':''}>+ Add product</button></div>
+      ${list.length ? `<div class="tbl-wrap"><table><thead><tr><th></th><th>Product</th><th>Price (PKR)</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><p class="note">Tip: change a price and click outside the box — it saves automatically.</p>` : '<p class="empty">No products in the database yet.</p>'}
+    </div>`;
+  },
+  view_categories() {
+    const count = slug => this.products.filter(p => p.category === slug).length;
+    return `<div class="panel">
+      <div class="panel-h"><h3 class="serif">Add a category</h3></div>
+      <form class="cat-add" id="catForm"><input id="catName" placeholder="e.g. Desserts" maxlength="40"><button class="sm-btn or" type="submit">+ Add category</button></form>
+    </div>
+    <div class="panel"><div class="tbl-wrap"><table><thead><tr><th>Order</th><th>Name</th><th>Products</th><th></th></tr></thead><tbody>
+      ${state.categories.map(c => `<tr><td>${Number(c.sort) || 0}</td><td><b>${esc(c.name)}</b><br><small style="color:var(--muted)">${esc(c.slug)}</small></td><td>${count(c.slug)}</td>
+      <td><div class="row-actions"><button class="sm-btn" data-adm="rename-cat" data-id="${esc(c.slug)}">Rename</button><button class="sm-btn" data-adm="move-cat" data-id="${esc(c.slug)}">Change order</button><button class="sm-btn red" data-adm="delete-cat" data-id="${esc(c.slug)}">Delete</button></div></td></tr>`).join('')}
+    </tbody></table></div></div>`;
+  },
+  openModal(html) { $('#aModalBody').innerHTML = html; $('#aModal').classList.add('on'); },
+  closeModal() { $('#aModal').classList.remove('on'); },
+  viewOrder(id) {
+    const o = this.orders.find(x => String(x.id) === String(id)); if (!o) return;
+    const items = Array.isArray(o.items) ? o.items : [];
+    const custMsg = `Assalam o Alaikum ${o.customer_name}, your Bite Boulevard order ${o.order_code} is now: ${o.status}. Thank you!`;
+    const custNum = '92' + String(o.phone).replace(/\D/g,'').replace(/^0/, '');
+    this.openModal(`
+      <p class="eyebrow">Order details</p>
+      <h3 class="serif" style="font-size:1.9rem;margin:10px 0 4px">${esc(o.order_code)}</h3>
+      <span class="pill ${statusClass(o.status)}">${esc(o.status)}</span>
+      <div class="detail-grid">
+        <div><small>Customer</small>${esc(o.customer_name)}</div>
+        <div><small>Mobile</small><a href="tel:${esc(o.phone)}" style="color:var(--orange);font-weight:700">${esc(o.phone)}</a></div>
+        <div class="full"><small>Delivery address</small>${esc(o.address)}</div>
+        ${o.notes ? `<div class="full"><small>Instructions</small>${esc(o.notes)}</div>` : ''}
+        <div><small>Placed</small>${esc(fmtDate(o.created_at))}</div>
+      </div>
+      <div class="mini-items">${items.map(i => `<div><span>${esc(i.name)} × ${Number(i.qty)} <small style="color:var(--muted)">(${fmt(i.price)} each)</small></span><b>${fmt(i.price * i.qty)}</b></div>`).join('')}
+        <div><span>Subtotal</span><b>${fmt(o.subtotal)}</b></div><div><span>Delivery</span><b style="color:#2e7d32">FREE</b></div>
+        <div style="border-top:1px dashed var(--line);padding-top:6px"><b>Total</b><b>${fmt(o.total)}</b></div></div>
+      ${o.status === 'Pending' ? `<div class="row-actions" style="margin-bottom:14px"><button class="sm-btn or" data-adm="status" data-id="${esc(o.id)}" data-status="Accepted">✓ Accept order</button><button class="sm-btn red" data-adm="status" data-id="${esc(o.id)}" data-status="Rejected">✕ Reject order</button></div>` : ''}
+      <div class="field"><label for="statusSel">Update status</label><select id="statusSel" data-order="${esc(o.id)}">${STATUSES.map(s => `<option ${s===o.status?'selected':''}>${s}</option>`).join('')}</select></div>
+      <a class="btn btn-dark btn-block" href="${esc(waLink(custMsg, custNum))}" target="_blank" rel="noopener">Message customer on WhatsApp</a>`);
+  },
+  async setStatus(id, status) {
+    if (status === 'Rejected' && !confirm('Reject this order?')) return;
+    try { await DB.setStatus(id, status); toast(`Order marked as ${status}`); await this.refresh(true); this.render(); this.viewOrder(id); }
+    catch (e) { toast('Could not update: ' + e.message); }
+  },
+  productForm(p) {
+    p = p || { name:'', description:'', price:'', category:(state.categories[0]||{}).slug, image:'', featured:false };
+    this.openModal(`
+      <p class="eyebrow">${p.id ? 'Edit product' : 'New product'}</p>
+      <h3 class="serif" style="font-size:1.9rem;margin:10px 0 20px">${p.id ? esc(p.name) : 'Add a product'}</h3>
+      <form id="prodForm" novalidate>
+        <input type="hidden" name="pid" value="${esc(p.id || '')}">
+        <div class="field"><label>Product name *</label><input name="name" required maxlength="80" value="${esc(p.name)}"></div>
+        <div class="field"><label>Category *</label><select name="category">${state.categories.map(c => `<option value="${esc(c.slug)}" ${c.slug===p.category?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Price (PKR) *</label><input name="price" type="number" min="0" step="10" required value="${esc(p.price)}"></div>
+        <div class="field"><label>Description</label><textarea name="description" rows="3" maxlength="300">${esc(p.description)}</textarea></div>
+        <div class="field"><label>Image URL</label><input name="image" type="url" placeholder="https://… (leave empty to use a category photo)" value="${esc(p.image)}"></div>
+        <label class="check"><input type="checkbox" name="featured" ${p.featured?'checked':''}> Show in "Bestsellers"</label>
+        <p class="warn" id="prodErr" hidden></p>
+        <button class="btn btn-orange btn-block" type="submit">${p.id ? 'Save changes' : 'Add product'}</button>
+      </form>`);
+  },
+  async submitProduct(form) {
+    const f = new FormData(form);
+    const p = { id: f.get('pid') || null, name: String(f.get('name')).trim(), category: f.get('category'), price: parseInt(f.get('price'), 10),
+      description: String(f.get('description')).trim(), image: String(f.get('image')).trim(), featured: f.get('featured') === 'on' };
+    const err = $('#prodErr');
+    if (!p.name || !p.category || !(p.price >= 0)) { err.textContent = 'Please fill in name, category and a valid price.'; err.hidden = false; return; }
+    if (!p.image) p.image = CAT_FALLBACK_IMG[p.category] || CAT_FALLBACK_IMG.burgers;
+    try { await DB.saveProduct(p); this.closeModal(); toast(p.id ? 'Product updated' : 'Product added'); await this.refresh(true); this.render(); }
+    catch (e) { err.textContent = 'Could not save: ' + e.message; err.hidden = false; }
+  }
+};
+
+/* admin events */
+document.addEventListener('click', async e => {
+  const go = e.target.closest('[data-tab-go]'); if (go) return Admin.setTab(go.dataset.tabGo);
+  const tab = e.target.closest('.a-tab[data-tab]'); if (tab) return Admin.setTab(tab.dataset.tab);
+  const t = e.target.closest('[data-adm]'); if (!t) return;
+  const id = t.dataset.id;
+  switch (t.dataset.adm) {
+    case 'exit': e.preventDefault(); Admin.close(); break;
+    case 'logout': Admin.logout(); break;
+    case 'refresh': await Admin.refresh(); toast('Updated'); break;
+    case 'close-modal': Admin.closeModal(); break;
+    case 'order-filter': Admin.orderFilter = id; Admin.render(); break;
+    case 'view-order': Admin.viewOrder(id); break;
+    case 'status': Admin.setStatus(id, t.dataset.status); break;
+    case 'new-product': Admin.productForm(); break;
+    case 'edit-product': Admin.productForm(Admin.products.find(p => String(p.id) === String(id))); break;
+    case 'delete-product': {
+      const p = Admin.products.find(x => String(x.id) === String(id));
+      if (!p || !confirm(`Delete "${p.name}" from the menu?`)) return;
+      try { await DB.deleteProduct(id); toast('Product deleted'); await Admin.refresh(true); Admin.render(); } catch (er) { toast('Could not delete: ' + er.message); }
+      break;
+    }
+    case 'seed': {
+      t.disabled = true; t.textContent = 'Loading…';
+      try { await DB.seed(); toast('Starter menu loaded'); await Admin.refresh(); } catch (er) { toast('Could not load menu: ' + er.message); t.disabled = false; t.textContent = 'Load starter menu into database'; }
+      break;
+    }
+    case 'rename-cat': {
+      const c = state.categories.find(x => x.slug === id); if (!c) return;
+      const name = prompt('New name for this category:', c.name); if (!name || !name.trim()) return;
+      try { await DB.saveCategory({ ...c, name: name.trim() }); toast('Category renamed'); await Admin.refresh(true); Admin.render(); renderPublic(); } catch (er) { toast('Could not rename: ' + er.message); }
+      break;
+    }
+    case 'move-cat': {
+      const c = state.categories.find(x => x.slug === id); if (!c) return;
+      const v = prompt('Position number (lower numbers appear first):', c.sort); if (v === null || isNaN(parseInt(v, 10))) return;
+      try { await DB.saveCategory({ ...c, sort: parseInt(v, 10) }); await Admin.refresh(true); Admin.render(); renderPublic(); } catch (er) { toast('Could not update: ' + er.message); }
+      break;
+    }
+    case 'delete-cat': {
+      const n = Admin.products.filter(p => p.category === id).length;
+      if (n) return alert(`This category still has ${n} product(s). Move or delete them first.`);
+      if (!confirm('Delete this category?')) return;
+      try { await DB.deleteCategory(id); toast('Category deleted'); await Admin.refresh(true); Admin.render(); renderPublic(); } catch (er) { toast('Could not delete: ' + er.message); }
+      break;
+    }
+  }
+});
+document.addEventListener('change', async e => {
+  if (e.target.matches('[data-price]')) {
+    const p = Admin.products.find(x => String(x.id) === e.target.dataset.price); const v = parseInt(e.target.value, 10);
+    if (!p || !(v >= 0) || v === Number(p.price)) return;
+    try { await DB.saveProduct({ ...p, price: v }); toast(`${p.name}: ${fmt(v)}`); await Admin.refresh(true); }
+    catch (er) { toast('Could not save price: ' + er.message); }
+  }
+  if (e.target.id === 'statusSel') Admin.setStatus(e.target.dataset.order, e.target.value);
+});
+document.addEventListener('submit', async e => {
+  const fid = e.target.getAttribute('id');
+  if (['loginForm','prodForm','catForm'].includes(fid)) e.preventDefault();
+  if (fid === 'loginForm') Admin.login();
+  if (fid === 'prodForm') Admin.submitProduct(e.target);
+  if (fid === 'catForm') {
+    const name = $('#catName').value.trim(); const slug = slugify(name);
+    if (!slug) return;
+    if (state.categories.some(c => c.slug === slug)) return toast('That category already exists');
+    const sort = Math.max(0, ...state.categories.map(c => Number(c.sort) || 0)) + 1;
+    try { await DB.saveCategory({ slug, name, sort }); toast('Category added'); await Admin.refresh(true); Admin.render(); }
+    catch (er) { toast('Could not add: ' + er.message); }
+  }
+});
+$('#aModal').addEventListener('click', e => { if (e.target.id === 'aModal') Admin.closeModal(); });
+$('#okModal').addEventListener('click', e => { if (e.target.id === 'okModal') { $('#okModal').classList.remove('on'); document.body.classList.remove('lock'); } });
+
+/* keep local-mode admin in sync when another tab places an order */
+window.addEventListener('storage', e => { if (Admin.isOpen && DB.mode === 'local' && ['bb_orders','bb_products','bb_categories'].includes(e.key)) Admin.refresh(true); });
+
+function route() { if (location.hash === '#admin') Admin.open(); else if (Admin.isOpen) Admin.close(); }
+window.addEventListener('hashchange', route);
+
+/* =====================================================================
+   START
+   ===================================================================== */
+(async function start() {
+  renderReviews();
+  renderCart();
+  // show the default menu instantly, then replace with database menu if connected
+  state.categories = clone(DEFAULT_CATEGORIES);
+  state.products = DB.mode === 'local' ? store.get('bb_products', clone(DEFAULT_PRODUCTS)) : clone(DEFAULT_PRODUCTS);
+  renderPublic();
+  observeReveals();
+  await DB.init();
+  await loadMenu();
+  observeReveals();
+  route();
+})();
+})();
+</script>
+</body>
+</html>
